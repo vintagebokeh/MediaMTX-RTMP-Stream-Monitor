@@ -79,6 +79,24 @@ function getHostOSMetrics() {
 // REST API ROUTES (/api/*)
 // -------------------------------------------------------------------
 
+// 0. Runtime Config Endpoint
+app.get('/api/v1/runtime-config', (req, res) => {
+  const streamPath = (req.query.path as string) || 'live/test';
+  const environment = process.env.VITE_APP_ENV || 'local';
+
+  res.json({
+    environment,
+    streamPath,
+    playback: {
+      webrtcUrl: process.env.WEBRTC_PLAYBACK_URL || `http://127.0.0.1:8889/${streamPath}`,
+      hlsUrl: process.env.HLS_PLAYBACK_URL || `http://127.0.0.1:8888/${streamPath}/index.m3u8`
+    },
+    features: {
+      livePreviewEnabled: true
+    }
+  });
+});
+
 // 1. Health Endpoint
 app.get('/api/health', async (req, res) => {
   let mediamtxConnected = false;

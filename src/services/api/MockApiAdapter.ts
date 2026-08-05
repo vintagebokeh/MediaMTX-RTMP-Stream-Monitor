@@ -7,6 +7,7 @@ import {
   LogEntry,
   PublisherInfo,
   ReaderInfo,
+  RuntimeConfig,
   StreamInfo,
   StreamPath,
   TelemetrySnapshot
@@ -214,6 +215,20 @@ export class MockApiAdapter implements IMonitorApiAdapter {
 
   getConfig(): ConnectionConfig {
     return { ...this.config };
+  }
+
+  async getRuntimeConfig(): Promise<RuntimeConfig> {
+    return {
+      environment: this.config.appEnv || 'local',
+      streamPath: 'live/test',
+      playback: {
+        webrtcUrl: 'http://127.0.0.1:8889/live/test',
+        hlsUrl: 'http://127.0.0.1:8888/live/test/index.m3u8'
+      },
+      features: {
+        livePreviewEnabled: true
+      }
+    };
   }
 
   async getHealth(): Promise<BackendHealth> {

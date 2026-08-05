@@ -91,7 +91,7 @@ export const PathManagerModal: React.FC<PathManagerModalProps> = ({
           }`}>
             <p className="font-semibold text-slate-700 dark:text-slate-300 font-sans">RTMP Publish Endpoint:</p>
             <p className="text-emerald-600 dark:text-emerald-400 font-bold break-all">
-              rtmp://127.0.0.1:1935/{pathName || 'live/cam2'}
+              rtmp://&lt;rtmp-ingress&gt;/{pathName || 'live/cam2'}
             </p>
           </div>
 

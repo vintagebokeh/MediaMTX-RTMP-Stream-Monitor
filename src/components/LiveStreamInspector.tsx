@@ -7,27 +7,62 @@ import {
   CheckCircle,
   Activity,
   Layers,
-  Radio
+  Radio,
+  Wifi,
+  Video
 } from 'lucide-react';
-import { StreamPath } from '../types';
+import { RuntimeConfig, StreamPath } from '../types';
+import { IMonitorApiAdapter } from '../services/api/IMonitorApiAdapter';
 
 interface LiveStreamInspectorProps {
   path: StreamPath;
   theme?: 'light' | 'dark';
+  adapter?: IMonitorApiAdapter;
 }
 
-export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({ path, theme = 'light' }) => {
+export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
+  path,
+  theme = 'light',
+  adapter
+}) => {
   const isDark = theme === 'dark';
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const [audioLevelL, setAudioLevelL] = useState<number>(78);
   const [audioLevelR, setAudioLevelR] = useState<number>(82);
 
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [webrtcFailed, setWebrtcFailed] = useState<boolean>(false);
+  const [hlsFailed, setHlsFailed] = useState<boolean>(false);
 
   const { publisher, metrics } = path;
 
-  // Render broadcast test pattern on canvas
+  // Fetch runtime configuration from Monitoring API
   useEffect(() => {
+    let isMounted = true;
+    if (adapter) {
+      adapter.getRuntimeConfig().then((cfg) => {
+        if (isMounted) {
+          setRuntimeConfig(cfg);
+        }
+      }).catch((err) => {
+        console.warn('Failed to load runtime config in inspector:', err);
+      });
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [adapter, path.name]);
+
+  // Determine active playback source
+  const canUseWebRTC = runtimeConfig?.features?.livePreviewEnabled && runtimeConfig?.playback?.webrtcUrl && !webrtcFailed;
+  const canUseHLS = !canUseWebRTC && runtimeConfig?.playback?.hlsUrl && !hlsFailed;
+  const useCanvasFallback = !canUseWebRTC && !canUseHLS;
+
+  // Render broadcast test pattern on canvas when in offline/mock/fallback mode
+  useEffect(() => {
+    if (!useCanvasFallback) return;
+
     let animId: number;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -126,7 +161,7 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({ path, 
     return () => {
       cancelAnimationFrame(animId);
     };
-  }, [isPlaying, path, publisher, metrics]);
+  }, [isPlaying, path, publisher, metrics, useCanvasFallback]);
 
   return (
     <div
@@ -146,14 +181,30 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({ path, 
           <div>
             <h3 className="text-sm font-bold flex items-center gap-2 font-mono">
               <span>Live Broadcast Feed & Signal Inspector</span>
-              <span className={`px-2 py-0.5 text-[10px] rounded border ${
-                isDark ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-              }`}>
-                1920x1080 canvas
-              </span>
+              {canUseWebRTC && (
+                <span className={`px-2 py-0.5 text-[10px] rounded font-bold uppercase tracking-wide border ${
+                  isDark ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                }`}>
+                  WEBRTC
+                </span>
+              )}
+              {canUseHLS && (
+                <span className={`px-2 py-0.5 text-[10px] rounded font-bold uppercase tracking-wide border ${
+                  isDark ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30' : 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                }`}>
+                  HLS
+                </span>
+              )}
+              {useCanvasFallback && (
+                <span className={`px-2 py-0.5 text-[10px] rounded font-bold uppercase tracking-wide border ${
+                  isDark ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-amber-100 text-amber-800 border-amber-300'
+                }`}>
+                  OFFLINE
+                </span>
+              )}
             </h3>
             <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Visual frame pattern inspector for RTMP input track validation
+              Runtime WebRTC/HLS feed via GET /api/v1/runtime-config with offline pattern fallback
             </p>
           </div>
         </div>
@@ -177,19 +228,47 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({ path, 
       {/* Main Player & VU Meter Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         
-        {/* Canvas Monitor (3/4 width) */}
+        {/* Monitor Container (3/4 width) */}
         <div className="lg:col-span-3 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 relative group aspect-video flex items-center justify-center shadow-inner">
-          <canvas
-            ref={canvasRef}
-            width={960}
-            height={540}
-            className="w-full h-full object-cover"
-          />
+          
+          {/* 1. WebRTC Stream Element */}
+          {canUseWebRTC && (
+            <iframe
+              src={runtimeConfig.playback.webrtcUrl!}
+              title="WebRTC Stream Preview"
+              className="w-full h-full border-0"
+              onError={() => setWebrtcFailed(true)}
+            />
+          )}
+
+          {/* 2. HLS Fallback Video Element */}
+          {canUseHLS && (
+            <video
+              src={runtimeConfig.playback.hlsUrl!}
+              autoPlay
+              playsInline
+              controls
+              className="w-full h-full object-cover"
+              onError={() => setHlsFailed(true)}
+            />
+          )}
+
+          {/* 3. SMPTE Canvas Color Bars Pattern (Offline / Mock Fallback) */}
+          {useCanvasFallback && (
+            <canvas
+              ref={canvasRef}
+              width={960}
+              height={540}
+              className="w-full h-full object-cover"
+            />
+          )}
 
           {/* Floating Live Badge */}
           <div className="absolute top-4 left-4 bg-slate-900/90 border border-slate-700 backdrop-blur-md rounded-lg px-3 py-1.5 flex items-center gap-2 shadow-lg">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-            <span className="text-xs font-bold text-emerald-400 tracking-wider">LIVE FEED</span>
+            <span className="text-xs font-bold text-emerald-400 tracking-wider">
+              MODE: {canUseWebRTC ? 'WEBRTC' : canUseHLS ? 'HLS' : 'OFFLINE'}
+            </span>
             <span className="text-slate-500">|</span>
             <span className="text-xs font-mono text-slate-300">Path: {path.name}</span>
           </div>
@@ -271,3 +350,4 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({ path, 
     </div>
   );
 };
+

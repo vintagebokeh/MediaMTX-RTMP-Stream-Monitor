@@ -7,6 +7,7 @@ import {
   HostMetrics,
   LogEntry,
   MonitoringApi,
+  RuntimeConfig,
   StreamInfo,
   StreamPath,
   TelemetrySnapshot
@@ -17,6 +18,11 @@ export interface IMonitorApiAdapter extends MonitoringApi {
    * Return adapter mode & connection properties
    */
   getConfig(): ConnectionConfig;
+
+  /**
+   * Fetch runtime connection details and playback URLs
+   */
+  getRuntimeConfig(): Promise<RuntimeConfig>;
 
   /**
    * Get backend health and MediaMTX connectivity

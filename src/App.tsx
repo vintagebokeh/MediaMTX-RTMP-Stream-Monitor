@@ -254,7 +254,7 @@ export default function App() {
             />
 
             {/* Visual Stream Inspector Canvas & Audio VU Meter */}
-            <LiveStreamInspector path={currentPath} theme={theme} />
+            <LiveStreamInspector path={currentPath} theme={theme} adapter={adapter} />
 
             {/* Real-time Bitrate Sparkline */}
             <BitrateChart history={history} theme={theme} />

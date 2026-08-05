@@ -111,7 +111,20 @@ export interface Experiment {
   averageLatencyMs: number;
 }
 
+export interface RuntimeConfig {
+  environment: 'local' | 'lan' | 'remote' | string;
+  streamPath: string;
+  playback: {
+    webrtcUrl: string | null;
+    hlsUrl: string | null;
+  };
+  features: {
+    livePreviewEnabled: boolean;
+  };
+}
+
 export interface MonitoringApi {
+  getRuntimeConfig(): Promise<RuntimeConfig>;
   getHealth(): Promise<HealthResponse>;
   getCurrentMetrics(): Promise<CurrentMetrics>;
   getStreams(): Promise<StreamInfo[]>;

@@ -5,6 +5,7 @@ import {
   Experiment,
   HostMetrics,
   LogEntry,
+  RuntimeConfig,
   StreamInfo,
   StreamPath,
   TelemetrySnapshot
@@ -33,6 +34,27 @@ export class RealApiAdapter implements IMonitorApiAdapter {
 
   getConfig(): ConnectionConfig {
     return { ...this.config };
+  }
+
+  async getRuntimeConfig(): Promise<RuntimeConfig> {
+    try {
+      const res = await fetch(`${this.getBaseUrl()}/api/v1/runtime-config`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      console.warn('RealApiAdapter getRuntimeConfig error:', err);
+      return {
+        environment: this.config.appEnv || 'local',
+        streamPath: 'live/test',
+        playback: {
+          webrtcUrl: null,
+          hlsUrl: null
+        },
+        features: {
+          livePreviewEnabled: true
+        }
+      };
+    }
   }
 
   async getHealth(): Promise<BackendHealth> {
