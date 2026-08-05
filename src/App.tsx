@@ -15,6 +15,7 @@ import {
   BackendHealth,
   ConnectionConfig,
   HostMetrics,
+  LatencyMeasurement,
   LogEntry,
   StreamPath,
   TelemetrySnapshot
@@ -32,6 +33,7 @@ export default function App() {
   const [selectedPathName, setSelectedPathName] = useState<string>('live/test');
   const [hostMetrics, setHostMetrics] = useState<HostMetrics | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [latestLatencySample, setLatestLatencySample] = useState<LatencyMeasurement | null>(null);
 
   const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'experiments' | 'host' | 'logs'>('overview');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
@@ -76,6 +78,9 @@ export default function App() {
 
         const l = await adapter.getLogs();
         setLogs(l);
+
+        const ls = await adapter.getLatestLatencySample(selectedPathName);
+        setLatestLatencySample(ls);
       } catch (err) {
         console.warn('Init fetch error:', err);
       }
@@ -119,21 +124,30 @@ export default function App() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const [h, p, hm, l] = await Promise.all([
+      const [h, p, hm, l, ls] = await Promise.all([
         adapter.getHealth(),
         adapter.getPaths(),
         adapter.getHostMetrics(),
-        adapter.getLogs()
+        adapter.getLogs(),
+        adapter.getLatestLatencySample(selectedPathName)
       ]);
       setHealth(h);
       setPaths(p);
       setHostMetrics(hm);
       setLogs(l);
+      setLatestLatencySample(ls);
     } catch (e) {
       console.warn('Refresh error:', e);
     } finally {
       setTimeout(() => setIsRefreshing(false), 400);
     }
+  };
+
+  const handleRecordLatencySample = async (streamPath: string, ms: number) => {
+    const sample = await adapter.recordLatencySample(streamPath, ms, 'manual');
+    setLatestLatencySample(sample);
+    const p = await adapter.getPaths();
+    setPaths(p);
   };
 
   // Save new configuration
@@ -250,6 +264,8 @@ export default function App() {
               selectedPathName={selectedPathName}
               onSelectPath={(name) => setSelectedPathName(name)}
               onDeletePath={handleDeletePath}
+              latestLatencySample={latestLatencySample}
+              onRecordLatencySample={handleRecordLatencySample}
               theme={theme}
             />
 
@@ -280,6 +296,8 @@ export default function App() {
               selectedPathName={selectedPathName}
               onSelectPath={(name) => setSelectedPathName(name)}
               onDeletePath={handleDeletePath}
+              latestLatencySample={latestLatencySample}
+              onRecordLatencySample={handleRecordLatencySample}
               theme={theme}
             />
             <BitrateChart history={history} theme={theme} />

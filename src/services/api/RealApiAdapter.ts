@@ -4,6 +4,7 @@ import {
   CurrentMetrics,
   Experiment,
   HostMetrics,
+  LatencyMeasurement,
   LogEntry,
   RuntimeConfig,
   StreamInfo,
@@ -126,6 +127,45 @@ export class RealApiAdapter implements IMonitorApiAdapter {
 
   async getStreams(): Promise<StreamInfo[]> {
     return this.getPaths();
+  }
+
+  async getLatestLatencySample(streamPath = 'live/test'): Promise<LatencyMeasurement> {
+    try {
+      const res = await fetch(`${this.getBaseUrl()}/api/v1/latency-samples/latest?streamPath=${encodeURIComponent(streamPath)}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      return {
+        valueMs: null,
+        source: 'manual',
+        measuredAt: null,
+        confidence: 'medium'
+      };
+    }
+  }
+
+  async recordLatencySample(
+    streamPath: string,
+    latencyMs: number,
+    source: LatencyMeasurement['source'] = 'manual'
+  ): Promise<LatencyMeasurement> {
+    try {
+      const res = await fetch(`${this.getBaseUrl()}/api/v1/latency-samples`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ streamPath, latencyMs, source })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      console.warn('RealApiAdapter recordLatencySample error:', err);
+      return {
+        valueMs: latencyMs,
+        source,
+        measuredAt: new Date().toISOString(),
+        confidence: 'medium'
+      };
+    }
   }
 
   async getExperiments(): Promise<Experiment[]> {

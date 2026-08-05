@@ -451,8 +451,18 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
               <span className="font-mono text-emerald-400 font-bold">MATCHED</span>
             </div>
             <div className="flex items-center justify-between text-slate-300">
-              <span>Target Latency (~2.0s):</span>
-              <span className="font-mono text-emerald-400 font-bold">{(metrics.latencyMs / 1000).toFixed(2)}s</span>
+              <span>Configured Latency Target:</span>
+              <span className="font-mono text-slate-300 font-bold">
+                {((metrics.configuredLatencyTargetMs || metrics.latencyMs || 2000) / 1000).toFixed(2)}s (2000 ms)
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-slate-300">
+              <span>Measured Latency:</span>
+              <span className={`font-mono font-bold ${
+                metrics.measuredLatency?.valueMs ? 'text-emerald-400' : 'text-slate-400'
+              }`}>
+                {metrics.measuredLatency?.valueMs ? `${metrics.measuredLatency.valueMs} ms` : 'NOT MEASURED'}
+              </span>
             </div>
             <div className="flex items-center justify-between text-slate-300">
               <span>Inbound Errors:</span>
@@ -539,9 +549,35 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
                 </div>
 
                 <div className="p-2 bg-slate-900 border border-slate-800 rounded">
-                  <span className="text-[10px] text-slate-400 font-sans block">Preview Enabled:</span>
+                  <span className="text-[10px] text-slate-400 font-sans block">Configured Target:</span>
                   <span className="font-bold text-slate-200">
-                    {String(runtimeConfig?.features?.livePreviewEnabled ?? false)}
+                    {metrics.configuredLatencyTargetMs || 2000} ms (2.0s)
+                  </span>
+                </div>
+              </div>
+
+              {/* Latency Measurement Diagnostics */}
+              <div className="grid grid-cols-3 gap-2 p-2 bg-slate-900/80 border border-indigo-500/20 rounded">
+                <div>
+                  <span className="text-[10px] text-slate-400 font-sans block">Measured Latency:</span>
+                  <span className={`font-bold ${
+                    metrics.measuredLatency?.valueMs ? 'text-indigo-400' : 'text-slate-400'
+                  }`}>
+                    {metrics.measuredLatency?.valueMs ? `${metrics.measuredLatency.valueMs} ms` : 'NOT MEASURED'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-slate-400 font-sans block">Latency Source:</span>
+                  <span className="font-bold text-slate-200">
+                    {metrics.measuredLatency?.valueMs ? 'MANUAL GLASS-TO-GLASS' : 'NONE'}
+                  </span>
+                </div>
+
+                <div>
+                  <span className="text-[10px] text-slate-400 font-sans block">Confidence:</span>
+                  <span className="font-bold text-slate-200">
+                    {metrics.measuredLatency?.valueMs ? (metrics.measuredLatency.confidence || 'MEDIUM').toUpperCase() : 'N/A'}
                   </span>
                 </div>
               </div>

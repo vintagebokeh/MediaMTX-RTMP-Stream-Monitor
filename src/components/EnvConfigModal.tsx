@@ -117,7 +117,7 @@ VITE_USE_MOCK_DATA="${useMockData}"
                 </span>
               </div>
               <p className="text-xs text-amber-900/80 dark:text-amber-200/80 leading-relaxed font-mono">
-                Simulates 1 path (<code className="px-1 rounded bg-amber-200 dark:bg-amber-950/60 font-bold">live/test</code>), 1080p60, 6 Mbps target bitrate, ~2.0s latency.
+                Simulates 1 path (<code className="px-1 rounded bg-amber-200 dark:bg-amber-950/60 font-bold">live/test</code>), 1080p60, 6 Mbps target bitrate, ~2.0s target buffer.
               </p>
             </div>
 

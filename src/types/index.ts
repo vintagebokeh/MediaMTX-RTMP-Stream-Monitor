@@ -33,10 +33,19 @@ export interface ReaderInfo {
   bytesSent: number;
 }
 
+export interface LatencyMeasurement {
+  valueMs: number | null;
+  source: 'manual' | 'embedded_timestamp' | 'browser_estimate' | 'mock';
+  measuredAt: string | null;
+  confidence: 'low' | 'medium' | 'high';
+}
+
 export interface StreamMetrics {
   currentBitrateKbps: number;
   targetBitrateKbps: number;
-  latencyMs: number; // e.g., 2000 ms (~2.0s)
+  latencyMs: number; // Configured latency target / MediaMTX buffer target
+  configuredLatencyTargetMs?: number;
+  measuredLatency?: LatencyMeasurement | null;
   inboundErrors: number; // 0
   discardedFrames: number; // 0
   fps: number;
@@ -128,6 +137,13 @@ export interface MonitoringApi {
   getHealth(): Promise<HealthResponse>;
   getCurrentMetrics(): Promise<CurrentMetrics>;
   getStreams(): Promise<StreamInfo[]>;
+
+  getLatestLatencySample(streamPath?: string): Promise<LatencyMeasurement>;
+  recordLatencySample(
+    streamPath: string,
+    latencyMs: number,
+    source?: 'manual' | 'embedded_timestamp' | 'browser_estimate' | 'mock'
+  ): Promise<LatencyMeasurement>;
 
   getExperiments(): Promise<Experiment[]>;
   addLatencySample(

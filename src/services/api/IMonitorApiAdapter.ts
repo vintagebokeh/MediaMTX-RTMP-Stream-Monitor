@@ -5,6 +5,7 @@ import {
   Experiment,
   HealthResponse,
   HostMetrics,
+  LatencyMeasurement,
   LogEntry,
   MonitoringApi,
   RuntimeConfig,

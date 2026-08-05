@@ -89,7 +89,7 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history, theme = 'li
             }`}
           >
             <Clock className="w-3.5 h-3.5 text-indigo-500" />
-            <span>Latency (~2.0s)</span>
+            <span>Configured Target (2000ms)</span>
           </button>
 
           <button
@@ -164,11 +164,11 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history, theme = 'li
                   color: tooltipText
                 }}
               />
-              <ReferenceLine y={2000} label={{ value: '2000 ms Target (~2.0s)', fill: '#6366f1', fontSize: 10 }} stroke="#6366f1" strokeDasharray="4 4" />
+              <ReferenceLine y={2000} label={{ value: 'Configured Target Buffer: 2000 ms', fill: '#6366f1', fontSize: 10 }} stroke="#6366f1" strokeDasharray="4 4" />
               <Line
                 type="monotone"
                 dataKey="latencyMs"
-                name="Measured Latency"
+                name="Configured Target Buffer"
                 stroke="#6366f1"
                 strokeWidth={2}
                 dot={false}

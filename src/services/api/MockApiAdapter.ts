@@ -4,6 +4,7 @@ import {
   CurrentMetrics,
   Experiment,
   HostMetrics,
+  LatencyMeasurement,
   LogEntry,
   PublisherInfo,
   ReaderInfo,
@@ -270,6 +271,40 @@ export class MockApiAdapter implements IMonitorApiAdapter {
 
   async getCurrentMetrics(): Promise<CurrentMetrics> {
     return this.getHostMetrics();
+  }
+
+  private latencySamplesStore: Map<string, LatencyMeasurement> = new Map();
+
+  async getLatestLatencySample(streamPath = 'live/test'): Promise<LatencyMeasurement> {
+    const sample = this.latencySamplesStore.get(streamPath);
+    if (sample) return sample;
+    return {
+      valueMs: null,
+      source: 'manual',
+      measuredAt: null,
+      confidence: 'medium'
+    };
+  }
+
+  async recordLatencySample(
+    streamPath: string,
+    latencyMs: number,
+    source: LatencyMeasurement['source'] = 'manual'
+  ): Promise<LatencyMeasurement> {
+    const measurement: LatencyMeasurement = {
+      valueMs: latencyMs,
+      source,
+      measuredAt: new Date().toISOString(),
+      confidence: 'medium'
+    };
+    this.latencySamplesStore.set(streamPath, measurement);
+
+    const targetPath = this.paths.get(streamPath);
+    if (targetPath) {
+      targetPath.metrics.measuredLatency = measurement;
+    }
+
+    return measurement;
   }
 
   async getStreams(): Promise<StreamInfo[]> {

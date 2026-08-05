@@ -15,6 +15,42 @@ app.use(express.json());
 const MEDIAMTX_CONTROL_API = process.env.MEDIAMTX_CONTROL_API || 'http://127.0.0.1:9997';
 const MEDIAMTX_METRICS_URL = process.env.MEDIAMTX_METRICS_URL || 'http://127.0.0.1:9998/metrics';
 
+// In-memory latency samples storage for V0.1
+interface LatencyMeasurement {
+  valueMs: number | null;
+  source: 'manual' | 'embedded_timestamp' | 'browser_estimate' | 'mock';
+  measuredAt: string | null;
+  confidence: 'low' | 'medium' | 'high';
+}
+
+const latencySamplesStore = new Map<string, LatencyMeasurement>();
+
+function getLatestLatencyForPath(streamPath: string): LatencyMeasurement {
+  const existing = latencySamplesStore.get(streamPath);
+  if (existing) return existing;
+  return {
+    valueMs: null,
+    source: 'manual',
+    measuredAt: null,
+    confidence: 'medium'
+  };
+}
+
+function setLatencySampleForPath(
+  streamPath: string,
+  latencyMs: number,
+  source: LatencyMeasurement['source'] = 'manual'
+): LatencyMeasurement {
+  const measurement: LatencyMeasurement = {
+    valueMs: latencyMs,
+    source,
+    measuredAt: new Date().toISOString(),
+    confidence: 'medium'
+  };
+  latencySamplesStore.set(streamPath, measurement);
+  return measurement;
+}
+
 // In-memory log buffer
 interface BackendLog {
   id: string;
@@ -97,6 +133,24 @@ app.get('/api/v1/runtime-config', (req, res) => {
   });
 });
 
+// 0b. GET Latency Sample Endpoint
+app.get('/api/v1/latency-samples/latest', (req, res) => {
+  const streamPath = (req.query.streamPath as string) || (req.query.path as string) || 'live/test';
+  const sample = getLatestLatencyForPath(streamPath);
+  res.json(sample);
+});
+
+// 0c. POST Latency Sample Endpoint
+app.post('/api/v1/latency-samples', (req, res) => {
+  const { streamPath, latencyMs, source } = req.body;
+  const targetPath = streamPath || 'live/test';
+  if (typeof latencyMs !== 'number' || isNaN(latencyMs)) {
+    return res.status(400).json({ error: 'latencyMs must be a valid number' });
+  }
+  const sample = setLatencySampleForPath(targetPath, latencyMs, source || 'manual');
+  res.json(sample);
+});
+
 // 1. Health Endpoint
 app.get('/api/health', async (req, res) => {
   let mediamtxConnected = false;
@@ -173,7 +227,9 @@ app.get('/api/paths', async (req, res) => {
       metrics: {
         currentBitrateKbps: 6010,
         targetBitrateKbps: 6000,
-        latencyMs: 2005,
+        latencyMs: 2000,
+        configuredLatencyTargetMs: 2000,
+        measuredLatency: getLatestLatencyForPath('live/test'),
         inboundErrors: 0,
         discardedFrames: 0,
         fps: 60,
@@ -233,7 +289,9 @@ app.get('/api/paths/:name(*)', async (req, res) => {
       metrics: {
         currentBitrateKbps: 6010,
         targetBitrateKbps: 6000,
-        latencyMs: 2005,
+        latencyMs: 2000,
+        configuredLatencyTargetMs: 2000,
+        measuredLatency: getLatestLatencyForPath(pathName),
         inboundErrors: 0,
         discardedFrames: 0,
         fps: 60,
@@ -461,7 +519,9 @@ wss.on('connection', (ws: WebSocket) => {
             metrics: {
               currentBitrateKbps: 6000 + Math.floor(Math.sin(Date.now() / 1000) * 80),
               targetBitrateKbps: 6000,
-              latencyMs: 2000 + Math.floor(Math.cos(Date.now() / 1500) * 20),
+              latencyMs: 2000,
+              configuredLatencyTargetMs: 2000,
+              measuredLatency: getLatestLatencyForPath('live/test'),
               inboundErrors: 0,
               discardedFrames: 0,
               fps: 60,

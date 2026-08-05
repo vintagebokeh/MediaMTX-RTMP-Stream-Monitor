@@ -1,18 +1,20 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   CheckCircle2,
   Clock,
   Zap,
-  AlertTriangle,
   Radio,
   Video,
   Volume2,
   Users,
-  HardDrive,
   Trash2,
-  Tv
+  Tv,
+  Sliders,
+  Send,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
-import { StreamPath } from '../types';
+import { LatencyMeasurement, StreamPath } from '../types';
 
 interface StreamPathCardProps {
   path: StreamPath;
@@ -20,6 +22,8 @@ interface StreamPathCardProps {
   selectedPathName: string;
   onSelectPath: (name: string) => void;
   onDeletePath: (name: string) => void;
+  latestLatencySample?: LatencyMeasurement | null;
+  onRecordLatencySample?: (streamPath: string, latencyMs: number) => Promise<void>;
   theme?: 'light' | 'dark';
 }
 
@@ -29,14 +33,37 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
   selectedPathName,
   onSelectPath,
   onDeletePath,
+  latestLatencySample,
+  onRecordLatencySample,
   theme = 'light'
 }) => {
   const isDark = theme === 'dark';
   const { name, ready, publisher, readers, metrics } = path;
 
+  const [inputMs, setInputMs] = useState<string>('500');
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+
   const bitrateMbps = (metrics.currentBitrateKbps / 1000).toFixed(2);
   const targetMbps = (metrics.targetBitrateKbps / 1000).toFixed(2);
-  const latencySec = (metrics.latencyMs / 1000).toFixed(2);
+  const configuredTargetMs = metrics.configuredLatencyTargetMs || 2000;
+  const configuredTargetSec = (configuredTargetMs / 1000).toFixed(2);
+
+  const activeSample = path.metrics.measuredLatency || latestLatencySample;
+  const measuredMs = activeSample?.valueMs ?? null;
+
+  const handleSaveSample = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const val = parseInt(inputMs, 10);
+    if (isNaN(val) || val <= 0) return;
+    setIsSaving(true);
+    try {
+      if (onRecordLatencySample) {
+        await onRecordLatencySample(name, val);
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-4 font-sans">
@@ -129,7 +156,7 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
           )}
         </div>
 
-        {/* Core Metric Highlights Grid - High Density */}
+        {/* Core Metric Highlights Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-4">
           
           {/* 1. Target vs Current Bitrate */}
@@ -161,40 +188,125 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
             </div>
           </div>
 
-          {/* 2. Measured Latency */}
+          {/* 2. Measured Latency (Real / Manual Glass-to-Glass) */}
+          <div className={`border rounded-lg p-3 space-y-2 relative ${
+            isDark ? 'bg-slate-950 border-indigo-900/40' : 'bg-indigo-50/40 border-indigo-200'
+          }`}>
+            <div className="flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1 font-bold text-indigo-600 dark:text-indigo-400">
+                <Clock className="w-3.5 h-3.5" />
+                Measured Latency
+              </span>
+              <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
+                measuredMs !== null
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  : isDark ? 'bg-slate-800 text-slate-400 border-slate-700' : 'bg-slate-200 text-slate-600 border-slate-300'
+              }`}>
+                {measuredMs !== null ? 'MANUAL GLASS-TO-GLASS' : 'NOT MEASURED'}
+              </span>
+            </div>
+
+            <div className="flex items-baseline space-x-1.5">
+              <span className="text-xl font-bold font-mono text-indigo-600 dark:text-indigo-300">
+                {measuredMs !== null ? `${measuredMs} ms` : 'NOT MEASURED'}
+              </span>
+              {measuredMs !== null && (
+                <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                  ({(measuredMs / 1000).toFixed(2)}s)
+                </span>
+              )}
+            </div>
+
+            {/* Source & Confidence Metadata */}
+            <div className="text-[10px] font-mono space-y-0.5 border-t border-indigo-500/10 pt-1.5">
+              <div className="flex justify-between text-slate-400">
+                <span>Source:</span>
+                <span className="font-bold text-slate-200">
+                  {measuredMs !== null ? 'MANUAL GLASS-TO-GLASS' : 'NONE'}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Confidence:</span>
+                <span className="font-bold text-slate-200">
+                  {measuredMs !== null ? 'MEDIUM' : 'N/A'}
+                </span>
+              </div>
+              <div className="flex justify-between text-slate-400">
+                <span>Compliance:</span>
+                <span className={`font-bold flex items-center gap-1 ${
+                  measuredMs === null
+                    ? 'text-slate-400'
+                    : measuredMs <= configuredTargetMs
+                    ? 'text-emerald-400'
+                    : 'text-amber-400'
+                }`}>
+                  {measuredMs === null ? (
+                    'NOT MEASURED'
+                  ) : measuredMs <= configuredTargetMs ? (
+                    <><ShieldCheck className="w-3 h-3 text-emerald-400" /> COMPLIANT</>
+                  ) : (
+                    <><AlertCircle className="w-3 h-3 text-amber-400" /> EXCEEDS TARGET</>
+                  )}
+                </span>
+              </div>
+            </div>
+
+            {/* Compact Manual Measurement Input */}
+            <form onSubmit={handleSaveSample} className="pt-1 flex items-center gap-1.5">
+              <input
+                type="number"
+                value={inputMs}
+                onChange={(e) => setInputMs(e.target.value)}
+                placeholder="ms"
+                className={`w-20 px-2 py-1 rounded text-xs font-mono border focus:outline-none focus:ring-1 focus:ring-indigo-500 ${
+                  isDark ? 'bg-slate-900 border-slate-700 text-slate-200' : 'bg-white border-slate-300 text-slate-800'
+                }`}
+              />
+              <button
+                type="submit"
+                disabled={isSaving}
+                className="flex-1 py-1 px-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded text-[10px] font-mono transition flex items-center justify-center gap-1 shadow-sm disabled:opacity-50"
+              >
+                <Send className="w-3 h-3" />
+                <span>Log Sample</span>
+              </button>
+            </form>
+          </div>
+
+          {/* 3. Configured Latency Target */}
           <div className={`border rounded-lg p-3 space-y-1.5 ${
             isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
           }`}>
             <div className={`flex items-center justify-between text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               <span className="flex items-center gap-1 font-semibold">
-                <Clock className="w-3.5 h-3.5 text-indigo-500" />
-                End-to-End Latency
+                <Sliders className="w-3.5 h-3.5 text-slate-400" />
+                Configured Target
               </span>
               <span className={`font-mono text-[10px] px-1 py-0.2 rounded ${
-                isDark ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-800'
+                isDark ? 'bg-slate-800 text-slate-300' : 'bg-slate-200 text-slate-800'
               }`}>
-                ±{metrics.jitterMs}ms Jitter
+                MediaMTX Buffer
               </span>
             </div>
             <div className="flex items-baseline space-x-1.5">
-              <span className="text-xl font-bold font-mono text-indigo-600 dark:text-indigo-300">
-                {latencySec}
+              <span className="text-xl font-bold font-mono text-slate-700 dark:text-slate-200">
+                {configuredTargetSec}
               </span>
-              <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>seconds</span>
+              <span className={`text-xs font-semibold ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>seconds ({configuredTargetMs} ms)</span>
             </div>
             <p className={`text-[10px] font-mono ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              MediaMTX Buffer: {metrics.latencyMs} ms
+              Target buffer configuration in mediamtx.yml
             </p>
           </div>
 
-          {/* 3. Inbound Errors */}
+          {/* 4. Inbound Errors & Discarded Frames */}
           <div className={`border rounded-lg p-3 space-y-1.5 ${
             isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
           }`}>
             <div className={`flex items-center justify-between text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               <span className="flex items-center gap-1 font-semibold">
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                Inbound Errors
+                Stream Health
               </span>
               <span className={`text-[10px] font-semibold px-1 py-0.2 rounded ${
                 isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-800'
@@ -202,46 +314,28 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
                 Optimal
               </span>
             </div>
-            <div className="flex items-baseline space-x-1.5">
-              <span className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                {metrics.inboundErrors}
-              </span>
-              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>errors</span>
+            <div className="flex justify-between items-baseline pt-0.5">
+              <div>
+                <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                  {metrics.inboundErrors}
+                </span>
+                <span className={`text-[10px] ml-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>errors</span>
+              </div>
+              <div>
+                <span className="text-lg font-bold font-mono text-emerald-600 dark:text-emerald-400">
+                  {metrics.discardedFrames}
+                </span>
+                <span className={`text-[10px] ml-1 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>dropped</span>
+              </div>
             </div>
             <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Strict 0 errors requirement verified
-            </p>
-          </div>
-
-          {/* 4. Discarded Frames */}
-          <div className={`border rounded-lg p-3 space-y-1.5 ${
-            isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
-          }`}>
-            <div className={`flex items-center justify-between text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              <span className="flex items-center gap-1 font-semibold">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                Discarded Frames
-              </span>
-              <span className={`text-[10px] font-semibold px-1 py-0.2 rounded ${
-                isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                0 Dropped
-              </span>
-            </div>
-            <div className="flex items-baseline space-x-1.5">
-              <span className="text-xl font-bold font-mono text-emerald-600 dark:text-emerald-400">
-                {metrics.discardedFrames}
-              </span>
-              <span className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>frames</span>
-            </div>
-            <p className={`text-[10px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              Keyframe interval: <span className="font-mono">{metrics.keyframeIntervalSec}s</span>
+              FPS: <span className="font-mono font-bold text-slate-200">{metrics.fps}</span> • Jitter: <span className="font-mono">{metrics.jitterMs}ms</span>
             </p>
           </div>
 
         </div>
 
-        {/* Media Technical Codec Badges - High Density */}
+        {/* Media Technical Codec Badges */}
         <div className={`mt-4 pt-3 border-t flex flex-wrap items-center justify-between gap-3 text-xs ${
           isDark ? 'border-slate-800' : 'border-slate-200'
         }`}>
