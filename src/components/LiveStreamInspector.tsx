@@ -9,7 +9,12 @@ import {
   Layers,
   Radio,
   Wifi,
-  Video
+  Video,
+  ChevronDown,
+  ChevronUp,
+  Bug,
+  AlertTriangle,
+  Terminal
 } from 'lucide-react';
 import { RuntimeConfig, StreamPath } from '../types';
 import { IMonitorApiAdapter } from '../services/api/IMonitorApiAdapter';
@@ -32,8 +37,10 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
   const [audioLevelR, setAudioLevelR] = useState<number>(82);
 
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
+  const [configLoadError, setConfigLoadError] = useState<boolean>(false);
   const [webrtcFailed, setWebrtcFailed] = useState<boolean>(false);
   const [hlsFailed, setHlsFailed] = useState<boolean>(false);
+  const [isDebugOpen, setIsDebugOpen] = useState<boolean>(false);
 
   const { publisher, metrics } = path;
 
@@ -44,9 +51,13 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
       adapter.getRuntimeConfig().then((cfg) => {
         if (isMounted) {
           setRuntimeConfig(cfg);
+          setConfigLoadError(false);
         }
       }).catch((err) => {
         console.warn('Failed to load runtime config in inspector:', err);
+        if (isMounted) {
+          setConfigLoadError(true);
+        }
       });
     }
     return () => {
@@ -58,6 +69,69 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
   const canUseWebRTC = runtimeConfig?.features?.livePreviewEnabled && runtimeConfig?.playback?.webrtcUrl && !webrtcFailed;
   const canUseHLS = !canUseWebRTC && runtimeConfig?.playback?.hlsUrl && !hlsFailed;
   const useCanvasFallback = !canUseWebRTC && !canUseHLS;
+
+  // Failure reason determination logic
+  const getFailureReason = (): string | null => {
+    if (configLoadError) {
+      return 'RUNTIME_CONFIG_UNAVAILABLE';
+    }
+    if (!runtimeConfig) {
+      return null;
+    }
+
+    const webrtcUrl = runtimeConfig.playback?.webrtcUrl;
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+
+    const isPrivateIp = (url: string | null | undefined) => {
+      if (!url) return false;
+      return (
+        url.includes('127.0.0.1') ||
+        url.includes('localhost') ||
+        url.includes('192.168.') ||
+        url.includes('10.') ||
+        /172\.(1[6-9]|2[0-9]|3[0-1])\./.test(url)
+      );
+    };
+
+    if (webrtcFailed || (!canUseWebRTC && !useCanvasFallback)) {
+      if (isHttps && webrtcUrl?.startsWith('http:')) {
+        return 'MIXED_CONTENT_BLOCKED';
+      }
+      if (isPrivateIp(webrtcUrl) && isHttps) {
+        return 'PRIVATE_NETWORK_UNREACHABLE';
+      }
+      if (hlsFailed) {
+        return 'HLS_FALLBACK_FAILED';
+      }
+      return 'WEBRTC_IFRAME_LOAD_FAILED';
+    }
+
+    if (useCanvasFallback) {
+      if (hlsFailed) {
+        return 'HLS_FALLBACK_FAILED';
+      }
+      if (isHttps && webrtcUrl?.startsWith('http:')) {
+        return 'MIXED_CONTENT_BLOCKED';
+      }
+      if (isPrivateIp(webrtcUrl) && isHttps) {
+        return 'PRIVATE_NETWORK_UNREACHABLE';
+      }
+      if (webrtcFailed) {
+        return 'WEBRTC_IFRAME_LOAD_FAILED';
+      }
+      if (!webrtcUrl) {
+        return 'RUNTIME_CONFIG_UNAVAILABLE';
+      }
+    }
+
+    if (hlsFailed) {
+      return 'HLS_FALLBACK_FAILED';
+    }
+
+    return null;
+  };
+
+  const failureReason = getFailureReason();
 
   // Render broadcast test pattern on canvas when in offline/mock/fallback mode
   useEffect(() => {
@@ -273,6 +347,16 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
             <span className="text-xs font-mono text-slate-300">Path: {path.name}</span>
           </div>
 
+          {failureReason && (
+            <div className="absolute bottom-4 left-4 right-4 bg-red-950/90 border border-red-500/50 backdrop-blur-md rounded-lg px-3 py-2 flex items-center gap-2 shadow-xl z-10 text-red-200 text-xs font-mono">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+              <div className="flex-1 truncate">
+                <span className="font-bold text-red-400">WebRTC Failure Reason:</span>{' '}
+                <span className="bg-red-900/80 px-1.5 py-0.5 rounded text-white font-bold">{failureReason}</span>
+              </div>
+            </div>
+          )}
+
           <div className="absolute top-4 right-4 bg-slate-900/90 border border-slate-700 backdrop-blur-md rounded-lg px-3 py-1.5 text-xs font-mono text-slate-300 shadow-lg">
             {(metrics.currentBitrateKbps / 1000).toFixed(2)} Mbps
           </div>
@@ -346,6 +430,88 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
 
         </div>
 
+      </div>
+
+      {/* Collapsible Debug Panel */}
+      <div className={`border-t pt-3 ${isDark ? 'border-slate-800' : 'border-slate-200'}`}>
+        <button
+          type="button"
+          onClick={() => setIsDebugOpen(!isDebugOpen)}
+          className={`w-full py-2 px-3 border rounded-lg text-xs font-mono font-semibold flex items-center justify-between transition ${
+            isDark
+              ? 'bg-slate-950 hover:bg-slate-800 text-slate-300 border-slate-800'
+              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <Bug className="w-3.5 h-3.5 text-indigo-500" />
+            <span>Playback Diagnostics & Debug Info</span>
+            {failureReason && (
+              <span className="px-1.5 py-0.5 text-[10px] bg-red-500/20 text-red-500 border border-red-500/30 rounded font-bold">
+                {failureReason}
+              </span>
+            )}
+          </div>
+          {isDebugOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        </button>
+
+        {isDebugOpen && (
+          <div className={`mt-3 p-3.5 border rounded-lg space-y-3 font-mono text-xs animate-in fade-in duration-150 ${
+            isDark ? 'bg-slate-950 border-slate-800 text-slate-300' : 'bg-slate-900 border-slate-800 text-slate-200'
+          }`}>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5 font-sans">
+                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                Resolved Playback URLs & State
+              </span>
+              <span className="text-[10px] text-slate-400">GET /api/v1/runtime-config</span>
+            </div>
+
+            <div className="space-y-2">
+              <div>
+                <span className="text-[10px] text-slate-400 font-sans block mb-0.5">Resolved WebRTC URL:</span>
+                <code className="block bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-[11px] text-emerald-400 break-all select-all">
+                  {runtimeConfig?.playback?.webrtcUrl || 'null (Unavailable)'}
+                </code>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 font-sans block mb-0.5">Resolved HLS URL:</span>
+                <code className="block bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-[11px] text-indigo-300 break-all select-all">
+                  {runtimeConfig?.playback?.hlsUrl || 'null (Unavailable)'}
+                </code>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                <div className="p-2 bg-slate-900 border border-slate-800 rounded">
+                  <span className="text-[10px] text-slate-400 font-sans block">Playback Mode:</span>
+                  <span className="font-bold text-emerald-400">
+                    {canUseWebRTC ? 'WEBRTC' : canUseHLS ? 'HLS' : 'OFFLINE'}
+                  </span>
+                </div>
+
+                <div className="p-2 bg-slate-900 border border-slate-800 rounded">
+                  <span className="text-[10px] text-slate-400 font-sans block">Failure Reason:</span>
+                  <span className={`font-bold ${failureReason ? 'text-red-400' : 'text-slate-400'}`}>
+                    {failureReason || 'NONE'}
+                  </span>
+                </div>
+
+                <div className="p-2 bg-slate-900 border border-slate-800 rounded">
+                  <span className="text-[10px] text-slate-400 font-sans block">Environment:</span>
+                  <span className="font-bold text-slate-200">{runtimeConfig?.environment || 'unknown'}</span>
+                </div>
+
+                <div className="p-2 bg-slate-900 border border-slate-800 rounded">
+                  <span className="text-[10px] text-slate-400 font-sans block">Preview Enabled:</span>
+                  <span className="font-bold text-slate-200">
+                    {String(runtimeConfig?.features?.livePreviewEnabled ?? false)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
