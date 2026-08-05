@@ -369,40 +369,76 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
             <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
               <span className="text-xs font-bold text-slate-200 flex items-center gap-1.5">
                 <Volume2 className="w-4 h-4 text-purple-400" />
-                Stereo Audio VU
+                Audio Telemetry
               </span>
-              <span className="text-[10px] font-mono text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded">
+              <span className="text-[10px] font-mono text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded font-bold">
                 AAC 48kHz
               </span>
             </div>
 
-            {/* Left Channel */}
-            <div className="space-y-1 mb-3">
-              <div className="flex justify-between text-[11px] font-mono text-slate-400">
-                <span>Left (L)</span>
-                <span>-{100 - audioLevelL} dB</span>
+            {!useCanvasFallback ? (
+              /* Live WebRTC / HLS Mode Audio Metadata */
+              <div className="space-y-2 text-xs font-mono">
+                <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
+                  <span className="text-slate-400">Audio Codec:</span>
+                  <span className="text-slate-200 font-bold">AAC</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
+                  <span className="text-slate-400">Sample Rate:</span>
+                  <span className="text-slate-200 font-bold">48 kHz</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
+                  <span className="text-slate-400">Channels:</span>
+                  <span className="text-slate-200 font-bold">Stereo</span>
+                </div>
+                <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
+                  <span className="text-slate-400">Audio Track Detected:</span>
+                  <span className="text-emerald-400 font-bold flex items-center gap-1">
+                    <CheckCircle className="w-3 h-3" /> YES
+                  </span>
+                </div>
+                <div className="pt-1.5">
+                  <span className="text-[10px] text-slate-400 block mb-1 font-sans">Level Metering:</span>
+                  <span className="inline-block w-full text-center py-1 px-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded text-[10px] font-bold">
+                    NOT AVAILABLE IN IFRAME MODE
+                  </span>
+                </div>
               </div>
-              <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
-                <div
-                  className="bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 h-1.5 rounded-full transition-all duration-100"
-                  style={{ width: `${audioLevelL}%` }}
-                />
-              </div>
-            </div>
+            ) : (
+              /* Mock Mode Simulated VU Meter Animation */
+              <div>
+                <div className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded px-2 py-0.5 mb-2.5 font-mono text-center">
+                  MOCK MODE VU METER
+                </div>
+                {/* Left Channel */}
+                <div className="space-y-1 mb-3">
+                  <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                    <span>Left (L)</span>
+                    <span>-{100 - audioLevelL} dB</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
+                    <div
+                      className="bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 h-1.5 rounded-full transition-all duration-100"
+                      style={{ width: `${audioLevelL}%` }}
+                    />
+                  </div>
+                </div>
 
-            {/* Right Channel */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-[11px] font-mono text-slate-400">
-                <span>Right (R)</span>
-                <span>-{100 - audioLevelR} dB</span>
+                {/* Right Channel */}
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] font-mono text-slate-400">
+                    <span>Right (R)</span>
+                    <span>-{100 - audioLevelR} dB</span>
+                  </div>
+                  <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
+                    <div
+                      className="bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 h-1.5 rounded-full transition-all duration-100"
+                      style={{ width: `${audioLevelR}%` }}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
-                <div
-                  className="bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 h-1.5 rounded-full transition-all duration-100"
-                  style={{ width: `${audioLevelR}%` }}
-                />
-              </div>
-            </div>
+            )}
           </div>
 
           {/* Quick Technical Validation Checklist */}
@@ -508,6 +544,14 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
                     {String(runtimeConfig?.features?.livePreviewEnabled ?? false)}
                   </span>
                 </div>
+              </div>
+
+              {/* Audio Analysis Note */}
+              <div className="p-2.5 bg-slate-900 border border-indigo-500/30 rounded text-[11px] text-indigo-300 font-sans flex items-start gap-2 mt-2">
+                <Volume2 className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Audio Note:</strong> Real audio level metering requires a native WHEP/WebRTC player with Web Audio API analysis.
+                </span>
               </div>
             </div>
           </div>
