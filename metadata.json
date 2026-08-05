@@ -1,0 +1,6 @@
+{
+  "name": "MediaMTX RTMP Stream Monitor",
+  "description": "Real-time telemetry, stream path metrics, publisher and reader session tracking, and host OS monitoring for MediaMTX RTMP servers with mock and live backend modes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
