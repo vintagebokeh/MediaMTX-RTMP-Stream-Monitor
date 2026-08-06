@@ -115,6 +115,71 @@ function getHostOSMetrics() {
 // REST API ROUTES (/api/*)
 // -------------------------------------------------------------------
 
+// System Memory Diagnostic Endpoint
+function getSystemMemory() {
+  const totalBytes = os.totalmem();
+  const availableBytes = os.freemem();
+  const usedBytes = Math.max(0, totalBytes - availableBytes);
+  const availablePercent = Math.round((availableBytes / totalBytes) * 100);
+
+  return {
+    totalBytes,
+    usedBytes,
+    availableBytes,
+    availablePercent,
+    commitUsedBytes: null,
+    commitLimitBytes: null,
+    swapUsedBytes: null,
+    sampledAt: new Date().toISOString()
+  };
+}
+
+let latestDiagnosticSnapshot: any = null;
+
+app.get('/api/v1/system-memory', (req, res) => {
+  res.json(getSystemMemory());
+});
+
+app.post('/api/v1/diagnostics/memory-snapshot', (req, res) => {
+  latestDiagnosticSnapshot = req.body;
+  res.json({ success: true, timestamp: new Date().toISOString() });
+});
+
+app.get('/api/v1/diagnostics/memory-snapshot', (req, res) => {
+  const sysMem = getSystemMemory();
+  const defaultSnapshot = {
+    samples: latestDiagnosticSnapshot?.samples || [],
+    telemetryHealth: latestDiagnosticSnapshot?.telemetryHealth || 'healthy',
+    adapterInstanceId: latestDiagnosticSnapshot?.adapterInstanceId || 'srv-instance-01',
+    subscriberCount: latestDiagnosticSnapshot?.subscriberCount ?? 1,
+    activeTransport: latestDiagnosticSnapshot?.activeTransport || 'websocket',
+    videoElementCount: latestDiagnosticSnapshot?.videoElementCount ?? 0,
+    iframeCount: latestDiagnosticSnapshot?.iframeCount ?? 0,
+    canvasCount: latestDiagnosticSnapshot?.canvasCount ?? 0,
+    activeAnimationLoopCount: latestDiagnosticSnapshot?.activeAnimationLoopCount ?? 0,
+    currentStreamPath: latestDiagnosticSnapshot?.currentStreamPath || 'live/test',
+    userAgent: req.headers['user-agent'] || 'MediaMTX-Monitor-Server',
+    appVersion: '1.0.0',
+    systemMemorySample: sysMem,
+    auditEvents: latestDiagnosticSnapshot?.auditEvents || []
+  };
+
+  const sanitize = (obj: any): any => {
+    if (!obj || typeof obj !== 'object') return obj;
+    if (Array.isArray(obj)) return obj.map(sanitize);
+    const clean: Record<string, any> = {};
+    for (const key of Object.keys(obj)) {
+      if (/key|secret|password|auth|token/i.test(key)) {
+        continue;
+      }
+      clean[key] = sanitize(obj[key]);
+    }
+    return clean;
+  };
+
+  res.json(sanitize(defaultSnapshot));
+});
+
 // 0. Runtime Config Endpoint
 app.get('/api/v1/runtime-config', (req, res) => {
   const streamPath = (req.query.path as string) || 'live/test';

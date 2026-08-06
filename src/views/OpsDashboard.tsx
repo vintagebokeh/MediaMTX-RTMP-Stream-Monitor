@@ -10,6 +10,10 @@ import { LogsViewer } from '../components/LogsViewer';
 
 import { EnvConfigModal } from '../components/EnvConfigModal';
 import { PathManagerModal } from '../components/PathManagerModal';
+import { MemoryHealthCard } from '../components/MemoryHealthCard';
+import { MemoryHistoryChart } from '../components/MemoryHistoryChart';
+import { MemoryWarningBanner } from '../components/MemoryWarningBanner';
+import { EmergencyActionsModal } from '../components/EmergencyActionsModal';
 
 import {
   BackendHealth,
@@ -76,6 +80,7 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'experiments' | 'host' | 'logs'>('overview');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isNewPathOpen, setIsNewPathOpen] = useState<boolean>(false);
+  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState<boolean>(false);
   const [experiments, setExperiments] = useState<any[]>([]);
 
   const loadExperiments = async () => {
@@ -172,11 +177,20 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
         onToggleTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
       />
 
+      {/* Persistent Operator Warning Banner */}
+      <MemoryWarningBanner onOpenActions={() => setIsEmergencyModalOpen(true)} />
+
       {/* Main Body Layout */}
       <main className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-8 py-6 space-y-6">
         {/* TAB 1: OVERVIEW */}
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-in fade-in duration-150">
+            {/* Memory Health Card */}
+            <MemoryHealthCard
+              theme={theme}
+              onOpenEmergencyActions={() => setIsEmergencyModalOpen(true)}
+            />
+
             <StreamPathCard
               path={currentPath}
               allPaths={paths}
@@ -206,6 +220,11 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
         {/* TAB 2: TELEMETRY & CHARTS */}
         {activeTab === 'telemetry' && (
           <div className="space-y-6 animate-in fade-in duration-150">
+            <MemoryHealthCard
+              theme={theme}
+              onOpenEmergencyActions={() => setIsEmergencyModalOpen(true)}
+            />
+            <MemoryHistoryChart theme={theme} />
             <StreamPathCard
               path={currentPath}
               allPaths={paths}
@@ -236,6 +255,11 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
         {/* TAB 4: HOST OPERATING SYSTEM METRICS */}
         {activeTab === 'host' && (
           <div className="space-y-6 animate-in fade-in duration-150">
+            <MemoryHealthCard
+              theme={theme}
+              onOpenEmergencyActions={() => setIsEmergencyModalOpen(true)}
+            />
+            <MemoryHistoryChart theme={theme} />
             <HostMetricsPanel metrics={hostMetrics} theme={theme} />
           </div>
         )}
@@ -249,6 +273,12 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
       </main>
 
       {/* Modals */}
+      <EmergencyActionsModal
+        isOpen={isEmergencyModalOpen}
+        onClose={() => setIsEmergencyModalOpen(false)}
+        theme={theme}
+      />
+
       <EnvConfigModal
         isOpen={isSettingsOpen}
         config={config}

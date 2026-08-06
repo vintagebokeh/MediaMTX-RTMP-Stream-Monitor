@@ -156,4 +156,5 @@ export interface MonitoringApi {
 }
 
 export * from './persona';
+export * from './memory';
 

@@ -29,6 +29,9 @@ export interface MemoryDiagnosticSample {
 }
 
 let activeAnimationLoopCount = 0;
+let activeTimerCount = 0;
+let activeWebSocketCount = 0;
+let activeResizeObserverCount = 0;
 
 export function incrementAnimationLoopCount(): number {
   activeAnimationLoopCount++;
@@ -47,6 +50,49 @@ export function getAnimationLoopCount(): number {
 export function resetAnimationLoopCount(): void {
   activeAnimationLoopCount = 0;
 }
+
+export function incrementTimerCount(): number {
+  activeTimerCount++;
+  return activeTimerCount;
+}
+
+export function decrementTimerCount(): number {
+  activeTimerCount = Math.max(0, activeTimerCount - 1);
+  return activeTimerCount;
+}
+
+export function getActiveTimerCount(): number {
+  return activeTimerCount;
+}
+
+export function incrementWebSocketCount(): number {
+  activeWebSocketCount++;
+  return activeWebSocketCount;
+}
+
+export function decrementWebSocketCount(): number {
+  activeWebSocketCount = Math.max(0, activeWebSocketCount - 1);
+  return activeWebSocketCount;
+}
+
+export function getActiveWebSocketCount(): number {
+  return activeWebSocketCount;
+}
+
+export function incrementResizeObserverCount(): number {
+  activeResizeObserverCount++;
+  return activeResizeObserverCount;
+}
+
+export function decrementResizeObserverCount(): number {
+  activeResizeObserverCount = Math.max(0, activeResizeObserverCount - 1);
+  return activeResizeObserverCount;
+}
+
+export function getActiveResizeObserverCount(): number {
+  return activeResizeObserverCount;
+}
+
 
 const memoryTrend: MemoryDiagnosticSample[] = [];
 
