@@ -12,16 +12,28 @@ import {
   TelemetrySnapshot
 } from '../../types';
 import { IMonitorApiAdapter } from './IMonitorApiAdapter';
+import { logTelemetryLifecycle } from './telemetryDebug';
 
 export class RealApiAdapter implements IMonitorApiAdapter {
-
+  readonly instanceId: string = 'real_' + Math.random().toString(36).substring(2, 8);
   private config: ConnectionConfig;
   private ws: WebSocket | null = null;
   private subscribers: Set<(data: TelemetrySnapshot) => void> = new Set();
   private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private isDisposed = false;
+  private isPollPending = false;
+  private activeTransport: 'websocket' | 'http-polling' | 'none' = 'none';
+  private wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private wsReconnectAttempts = 0;
+  private readonly maxWsReconnectAttempts = 5;
 
   constructor(config: ConnectionConfig) {
     this.config = config;
+    logTelemetryLifecycle('adapter created', this.instanceId, { mode: 'real', config: this.config });
+  }
+
+  getSubscriberCount(): number {
+    return this.subscribers.size;
   }
 
   private getBaseUrl(): string {
@@ -274,61 +286,128 @@ export class RealApiAdapter implements IMonitorApiAdapter {
   }
 
   subscribeLiveMetrics(callback: (data: TelemetrySnapshot) => void): () => void {
+    if (this.isDisposed) return () => {};
+
     this.subscribers.add(callback);
+    logTelemetryLifecycle('subscriber added', this.instanceId, { totalSubscribers: this.subscribers.size });
 
-    // Try WebSocket connection first if configured
-    if (!this.ws && this.config.wsUrl) {
-      try {
-        this.ws = new WebSocket(this.config.wsUrl);
-        this.ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            this.subscribers.forEach((cb) => cb(data));
-          } catch (e) {
-            console.error('WS parse error:', e);
-          }
-        };
-
-        this.ws.onerror = (err) => {
-          console.warn('WS error, switching to HTTP polling:', err);
-          this.startHttpPolling();
-        };
-
-        this.ws.onclose = () => {
-          this.ws = null;
-          this.startHttpPolling();
-        };
-      } catch (err) {
-        this.startHttpPolling();
-      }
-    } else {
-      this.startHttpPolling();
+    if (this.subscribers.size === 1) {
+      this.startTransport();
     }
 
     return () => {
       this.subscribers.delete(callback);
+      logTelemetryLifecycle('subscriber removed', this.instanceId, { remainingSubscribers: this.subscribers.size });
       if (this.subscribers.size === 0) {
-        if (this.ws) {
-          this.ws.close();
-          this.ws = null;
-        }
-        if (this.pollInterval) {
-          clearInterval(this.pollInterval);
-          this.pollInterval = null;
-        }
+        this.stopAllTransports('no-subscribers');
       }
     };
   }
 
+  private startTransport() {
+    if (this.isDisposed || this.subscribers.size === 0) return;
+
+    if (this.config.wsUrl) {
+      this.connectWebSocket();
+    } else {
+      this.startHttpPolling();
+    }
+  }
+
+  private connectWebSocket() {
+    if (this.isDisposed || this.subscribers.size === 0 || this.ws) return;
+
+    try {
+      logTelemetryLifecycle('transport started', this.instanceId, { transport: 'websocket', url: this.config.wsUrl });
+      this.activeTransport = 'websocket';
+      this.ws = new WebSocket(this.config.wsUrl!);
+
+      this.ws.onopen = () => {
+        this.wsReconnectAttempts = 0;
+      };
+
+      this.ws.onmessage = (event) => {
+        if (this.isDisposed) return;
+        try {
+          const data = JSON.parse(event.data);
+          // If WS message received while HTTP polling fallback was running, stop HTTP polling
+          if (this.pollInterval) {
+            clearInterval(this.pollInterval);
+            this.pollInterval = null;
+            logTelemetryLifecycle('transport fallback', this.instanceId, { from: 'http-polling', to: 'websocket' });
+          }
+          this.activeTransport = 'websocket';
+          this.subscribers.forEach((cb) => cb(data));
+        } catch (e) {
+          // parse error ignored
+        }
+      };
+
+      this.ws.onerror = () => {
+        if (this.isDisposed) return;
+        this.handleWsFailure();
+      };
+
+      this.ws.onclose = () => {
+        if (this.isDisposed) return;
+        this.ws = null;
+        this.handleWsFailure();
+      };
+    } catch (err) {
+      if (this.isDisposed) return;
+      this.handleWsFailure();
+    }
+  }
+
+  private handleWsFailure() {
+    if (this.isDisposed || this.subscribers.size === 0) return;
+
+    // Start HTTP polling as fallback if not already running
+    if (!this.pollInterval) {
+      logTelemetryLifecycle('transport fallback', this.instanceId, { from: 'websocket', to: 'http-polling' });
+      this.startHttpPolling();
+    }
+
+    // Attempt bounded WS reconnect backoff if allowed
+    if (this.wsReconnectAttempts < this.maxWsReconnectAttempts && !this.wsReconnectTimer) {
+      this.wsReconnectAttempts++;
+      const backoffMs = Math.min(1000 * Math.pow(2, this.wsReconnectAttempts), 10000);
+      this.wsReconnectTimer = setTimeout(() => {
+        this.wsReconnectTimer = null;
+        if (!this.isDisposed && this.subscribers.size > 0 && !this.ws) {
+          this.connectWebSocket();
+        }
+      }, backoffMs);
+    }
+  }
+
   private startHttpPolling() {
-    if (this.pollInterval) return;
+    if (this.isDisposed || this.pollInterval) return;
+
+    logTelemetryLifecycle('transport started', this.instanceId, { transport: 'http-polling' });
+    this.activeTransport = 'http-polling';
+
     this.pollInterval = setInterval(async () => {
-      if (this.subscribers.size === 0) return;
+      if (this.isDisposed || this.subscribers.size === 0) return;
+
+      // Single-flight guard against overlapping requests
+      if (this.isPollPending) {
+        return;
+      }
+
+      this.isPollPending = true;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000);
+
       try {
         const [paths, host] = await Promise.all([
           this.getPaths(),
           this.getHostMetrics()
         ]);
+        clearTimeout(timeoutId);
+
+        if (this.isDisposed || this.subscribers.size === 0) return;
+
         const snapshot: TelemetrySnapshot = {
           paths,
           host,
@@ -337,20 +416,36 @@ export class RealApiAdapter implements IMonitorApiAdapter {
         };
         this.subscribers.forEach((cb) => cb(snapshot));
       } catch (e) {
-        // quiet error during polling
+        clearTimeout(timeoutId);
+      } finally {
+        this.isPollPending = false;
       }
     }, 1500);
   }
 
-  dispose(): void {
+  private stopAllTransports(reason: string) {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
     if (this.ws) {
-      this.ws.close();
+      try { this.ws.close(); } catch (_) {}
       this.ws = null;
     }
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = null;
+    }
+    this.activeTransport = 'none';
+    this.isPollPending = false;
+    logTelemetryLifecycle('transport stopped', this.instanceId, { reason });
+  }
+
+  dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
+    this.stopAllTransports('disposed');
     this.subscribers.clear();
+    logTelemetryLifecycle('adapter disposed', this.instanceId);
   }
 }

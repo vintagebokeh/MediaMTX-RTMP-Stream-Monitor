@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { DevRoleSwitcher } from './components/DevRoleSwitcher';
+import { TelemetryDebugBadge } from './components/TelemetryDebugBadge';
 import { OpsDashboard } from './views/OpsDashboard';
 import { ProducerDashboard } from './views/ProducerDashboard';
 import { ClientDashboard } from './views/ClientDashboard';
@@ -17,6 +18,7 @@ import {
 } from './types';
 import { IMonitorApiAdapter } from './services/api/IMonitorApiAdapter';
 import { createApiAdapter, getDefaultConfig, saveConfig } from './services/api/adapterFactory';
+import { logTelemetryHeartbeat, TelemetrySource } from './services/api/telemetryDebug';
 
 export default function App() {
   const [config, setConfig] = useState<ConnectionConfig>(getDefaultConfig());
@@ -30,8 +32,28 @@ export default function App() {
   const [hostMetrics, setHostMetrics] = useState<HostMetrics | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [latestLatencySample, setLatestLatencySample] = useState<LatencyMeasurement | null>(null);
-
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+
+  // Telemetry Health Tracking
+  const [lastTelemetryReceivedAt, setLastTelemetryReceivedAt] = useState<number | null>(null);
+  const [telemetrySource, setTelemetrySource] = useState<TelemetrySource>('unknown');
+  const [consecutiveFailures, setConsecutiveFailures] = useState<number>(0);
+  const [nowTime, setNowTime] = useState<number>(Date.now());
+
+  useEffect(() => {
+    const ticker = setInterval(() => {
+      setNowTime(Date.now());
+    }, 1000);
+    return () => clearInterval(ticker);
+  }, []);
+
+  const lastUpdateAgeMs = lastTelemetryReceivedAt ? nowTime - lastTelemetryReceivedAt : null;
+  const healthStatus: 'healthy' | 'degraded' | 'stale' =
+    lastUpdateAgeMs === null || lastUpdateAgeMs > 10000
+      ? 'stale'
+      : lastUpdateAgeMs > 3000
+      ? 'degraded'
+      : 'healthy';
 
   // Routing / Persona state derived from URL
   const getPersonaFromPath = (): DashboardPersona => {
@@ -75,9 +97,12 @@ export default function App() {
 
   // Re-create adapter when config changes
   useEffect(() => {
+    console.log('[Adapter Lifecycle] Creating adapter instance for config:', config);
     const newAdapter = createApiAdapter(config);
     setAdapter(newAdapter);
+
     return () => {
+      console.log('[Adapter Lifecycle] Cleaning up / disposing adapter instance');
       newAdapter.dispose();
     };
   }, [config]);
@@ -85,6 +110,9 @@ export default function App() {
   // Fetch initial data & subscribe to real-time telemetry
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
+    let isMounted = true;
+
+    console.log('[Pipeline Init] Setting up telemetry subscription for adapter and path:', selectedPathName);
 
     const initData = async () => {
       try {
@@ -97,6 +125,10 @@ export default function App() {
           adapter.getLatestLatencySample(selectedPathName)
         ]);
 
+        if (!isMounted) return;
+
+        console.log('[API response received] Initial dashboard payload received');
+        console.log('[React state updated] Setting initial health, paths, host metrics, and logs');
         setHealth(h);
         setRuntimeConfig(rc);
         setPaths(p);
@@ -107,12 +139,28 @@ export default function App() {
         console.warn('Init fetch error:', err);
       }
 
+      if (!isMounted) return;
+
       unsubscribe = adapter.subscribeLiveMetrics((snapshot: TelemetrySnapshot) => {
+        if (!isMounted) return;
+
+        const recvTime = Date.now();
+        const src: TelemetrySource = config.useMockData
+          ? 'mock'
+          : adapter.getConfig().wsUrl
+          ? 'websocket'
+          : 'http-polling';
+
+        setLastTelemetryReceivedAt(recvTime);
+        setTelemetrySource(src);
+        setConsecutiveFailures(0);
+
         setPaths(snapshot.paths);
         setHostMetrics(snapshot.host);
 
         const targetPath = snapshot.paths.find((item) => item.name === selectedPathName) || snapshot.paths[0];
 
+        let currentSampleCount = 0;
         if (targetPath) {
           const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString();
           setHistory((prev) => {
@@ -127,16 +175,32 @@ export default function App() {
                 discardedFrames: targetPath.metrics.discardedFrames
               }
             ];
-            return next.slice(-120);
+            const capped = next.slice(-120);
+            currentSampleCount = capped.length;
+            return capped;
           });
         }
+
+        logTelemetryHeartbeat({
+          source: src,
+          pollAt: new Date(snapshot.timestamp).toISOString(),
+          receivedAt: new Date(recvTime).toISOString(),
+          stateUpdatedAt: new Date().toISOString(),
+          pathCount: snapshot.paths.length,
+          sampleCount: currentSampleCount || 1,
+          adapterInstanceId: adapter.instanceId
+        });
       });
     };
 
     initData();
 
     return () => {
-      if (unsubscribe) unsubscribe();
+      console.log('[Pipeline Cleanup] Unsubscribing live metrics');
+      isMounted = false;
+      if (unsubscribe) {
+        unsubscribe();
+      }
     };
   }, [adapter, selectedPathName]);
 
@@ -268,6 +332,14 @@ export default function App() {
           isRefreshing={isRefreshing}
         />
       )}
+
+      <TelemetryDebugBadge
+        healthStatus={healthStatus}
+        source={telemetrySource}
+        lastUpdateAgeMs={lastUpdateAgeMs}
+        adapterInstanceId={adapter.instanceId}
+        subscriberCount={adapter.getSubscriberCount ? adapter.getSubscriberCount() : 0}
+      />
     </div>
   );
 }

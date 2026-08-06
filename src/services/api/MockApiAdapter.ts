@@ -14,8 +14,10 @@ import {
   TelemetrySnapshot
 } from '../../types';
 import { IMonitorApiAdapter } from './IMonitorApiAdapter';
+import { logTelemetryLifecycle } from './telemetryDebug';
 
 export class MockApiAdapter implements IMonitorApiAdapter {
+  readonly instanceId: string = 'mock_' + Math.random().toString(36).substring(2, 8);
   private config: ConnectionConfig;
   private paths: Map<string, StreamPath> = new Map();
   private logs: LogEntry[] = [];
@@ -23,6 +25,7 @@ export class MockApiAdapter implements IMonitorApiAdapter {
   private subscribers: Set<(data: TelemetrySnapshot) => void> = new Set();
   private timer: ReturnType<typeof setInterval> | null = null;
   private uptimeStart: number = Date.now();
+  private isDisposed = false;
 
   private experiments: Experiment[] = [
     {
@@ -61,7 +64,11 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     };
 
     this.initDefaultMockData();
-    this.startSimulationLoop();
+    logTelemetryLifecycle('adapter created', this.instanceId, { mode: 'mock' });
+  }
+
+  getSubscriberCount(): number {
+    return this.subscribers.size;
   }
 
   private initDefaultMockData() {
@@ -158,7 +165,16 @@ export class MockApiAdapter implements IMonitorApiAdapter {
   }
 
   private startSimulationLoop() {
+    if (this.isDisposed || this.timer) return;
+    logTelemetryLifecycle('transport started', this.instanceId, { transport: 'mock-loop' });
     this.timer = setInterval(() => {
+      if (this.isDisposed) {
+        if (this.timer) {
+          clearInterval(this.timer);
+          this.timer = null;
+        }
+        return;
+      }
       this.updateTelemetrySimulation();
       this.notifySubscribers();
     }, 1000);
@@ -204,6 +220,7 @@ export class MockApiAdapter implements IMonitorApiAdapter {
   }
 
   private notifySubscribers() {
+    if (this.isDisposed || this.subscribers.size === 0) return;
     const snapshot: TelemetrySnapshot = {
       paths: Array.from(this.paths.values()),
       host: { ...this.host },
@@ -453,7 +470,16 @@ export class MockApiAdapter implements IMonitorApiAdapter {
   }
 
   subscribeLiveMetrics(callback: (data: TelemetrySnapshot) => void): () => void {
+    if (this.isDisposed) return () => {};
+
     this.subscribers.add(callback);
+    logTelemetryLifecycle('subscriber added', this.instanceId, { totalSubscribers: this.subscribers.size });
+
+    // Start simulation loop if first subscriber
+    if (this.subscribers.size === 1) {
+      this.startSimulationLoop();
+    }
+
     // Emit current state immediately
     callback({
       paths: Array.from(this.paths.values()),
@@ -464,14 +490,24 @@ export class MockApiAdapter implements IMonitorApiAdapter {
 
     return () => {
       this.subscribers.delete(callback);
+      logTelemetryLifecycle('subscriber removed', this.instanceId, { remainingSubscribers: this.subscribers.size });
+      if (this.subscribers.size === 0 && this.timer) {
+        clearInterval(this.timer);
+        this.timer = null;
+        logTelemetryLifecycle('transport stopped', this.instanceId, { reason: 'no-subscribers' });
+      }
     };
   }
 
   dispose(): void {
+    if (this.isDisposed) return;
+    this.isDisposed = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
+      logTelemetryLifecycle('transport stopped', this.instanceId, { reason: 'disposed' });
     }
     this.subscribers.clear();
+    logTelemetryLifecycle('adapter disposed', this.instanceId);
   }
 }

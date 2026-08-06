@@ -16,6 +16,16 @@ import {
 
 export interface IMonitorApiAdapter extends MonitoringApi {
   /**
+   * Unique instance identifier for lifecycle tracking
+   */
+  readonly instanceId: string;
+
+  /**
+   * Current number of active live metrics subscribers
+   */
+  getSubscriberCount(): number;
+
+  /**
    * Return adapter mode & connection properties
    */
   getConfig(): ConnectionConfig;
