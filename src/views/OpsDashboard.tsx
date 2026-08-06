@@ -76,6 +76,37 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'experiments' | 'host' | 'logs'>('overview');
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [isNewPathOpen, setIsNewPathOpen] = useState<boolean>(false);
+  const [experiments, setExperiments] = useState<any[]>([]);
+
+  const loadExperiments = async () => {
+    try {
+      const list = await adapter.getExperiments();
+      setExperiments(list);
+    } catch (e) {
+      console.warn('Load experiments error:', e);
+    }
+  };
+
+  React.useEffect(() => {
+    if (activeTab === 'experiments') {
+      loadExperiments();
+    }
+  }, [activeTab, adapter]);
+
+  const handleStartExperiment = async (id: string) => {
+    await adapter.startExperiment(id);
+    await loadExperiments();
+  };
+
+  const handleStopExperiment = async (id: string) => {
+    await adapter.stopExperiment(id);
+    await loadExperiments();
+  };
+
+  const handleAddExperimentSample = async (id: string, ms: number) => {
+    await adapter.addLatencySample(id, ms);
+    await loadExperiments();
+  };
 
   const isDark = theme === 'dark';
 
@@ -192,7 +223,13 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
         {/* TAB 3: BENCHMARK EXPERIMENTS */}
         {activeTab === 'experiments' && (
           <div className="space-y-6 animate-in fade-in duration-150">
-            <ExperimentsPanel adapter={adapter} theme={theme} />
+            <ExperimentsPanel
+              experiments={experiments}
+              onStartExperiment={handleStartExperiment}
+              onStopExperiment={handleStopExperiment}
+              onAddSample={handleAddExperimentSample}
+              theme={theme}
+            />
           </div>
         )}
 

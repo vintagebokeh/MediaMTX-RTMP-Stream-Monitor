@@ -341,4 +341,16 @@ export class RealApiAdapter implements IMonitorApiAdapter {
       }
     }, 1500);
   }
+
+  dispose(): void {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+    if (this.ws) {
+      this.ws.close();
+      this.ws = null;
+    }
+    this.subscribers.clear();
+  }
 }

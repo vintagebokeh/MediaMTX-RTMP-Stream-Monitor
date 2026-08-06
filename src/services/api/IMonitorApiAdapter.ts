@@ -105,5 +105,10 @@ export interface IMonitorApiAdapter extends MonitoringApi {
    * Stop experiment recording
    */
   stopExperiment(experimentId: string): Promise<void>;
+
+  /**
+   * Dispose resources, stop background simulation loops or connections
+   */
+  dispose(): void;
 }
 

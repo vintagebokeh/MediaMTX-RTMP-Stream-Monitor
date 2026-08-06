@@ -466,4 +466,12 @@ export class MockApiAdapter implements IMonitorApiAdapter {
       this.subscribers.delete(callback);
     };
   }
+
+  dispose(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.subscribers.clear();
+  }
 }

@@ -77,6 +77,9 @@ export default function App() {
   useEffect(() => {
     const newAdapter = createApiAdapter(config);
     setAdapter(newAdapter);
+    return () => {
+      newAdapter.dispose();
+    };
   }, [config]);
 
   // Fetch initial data & subscribe to real-time telemetry
@@ -124,7 +127,7 @@ export default function App() {
                 discardedFrames: targetPath.metrics.discardedFrames
               }
             ];
-            return next.slice(-30);
+            return next.slice(-120);
           });
         }
       });
