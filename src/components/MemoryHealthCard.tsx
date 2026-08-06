@@ -64,13 +64,17 @@ export const MemoryHealthCard: React.FC<MemoryHealthCardProps> = ({
 
   const {
     healthState,
+    hostHealthState,
     browserHeapHealthState,
     overallHealthState,
+    baselineState,
     leakSuspicion,
     suspicionReason,
     availableRAMBytes,
+    usedRAMBytes,
     totalRAMBytes,
     availableRAMPercent,
+    hostMemorySourceApi,
     browserHeap,
     resourceCounts,
     consumptionRateMBPerMin,
@@ -142,7 +146,7 @@ export const MemoryHealthCard: React.FC<MemoryHealthCardProps> = ({
     }
   };
 
-  const overallBadge = getHealthBadge(overallHealthState || healthState);
+  const hostBadge = getHealthBadge(hostHealthState || healthState);
   const browserBadge = getHealthBadge(browserHeapHealthState);
   const leakBadge = getLeakBadge();
 
@@ -174,28 +178,42 @@ export const MemoryHealthCard: React.FC<MemoryHealthCardProps> = ({
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          {/* Overall Health State Badge */}
+          {/* Host Memory Pressure Badge */}
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold uppercase tracking-wider ${overallBadge.bg}`}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold uppercase tracking-wider ${hostBadge.bg}`}
+            title="Host OS System RAM Pressure"
           >
-            {overallBadge.icon}
-            <span>System: {overallBadge.label}</span>
+            {hostBadge.icon}
+            <span>HOST RAM: {hostBadge.label}</span>
           </span>
 
           {/* Browser Heap Health Badge */}
           <span
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-semibold uppercase tracking-wider ${browserBadge.bg}`}
+            title="Browser JavaScript Heap Memory"
           >
             <Zap className="w-3.5 h-3.5" />
-            <span>Heap: {browserBadge.label}</span>
+            <span>BROWSER HEAP: {browserBadge.label}</span>
           </span>
 
           {/* Leak Suspicion Badge */}
           <span
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-mono font-medium ${leakBadge.bg}`}
+            title="Correlation Leak Classifier"
           >
             <Activity className="w-3.5 h-3.5" />
-            <span>Leak: {leakBadge.label}</span>
+            <span>LEAK: {leakBadge.label}</span>
+          </span>
+
+          {/* Baseline Status Badge */}
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-mono ${
+              baselineState === 'READY'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+            }`}
+          >
+            {baselineState}
           </span>
 
           {onOpenEmergencyActions && overallHealthState !== 'HEALTHY' && (
@@ -215,13 +233,16 @@ export const MemoryHealthCard: React.FC<MemoryHealthCardProps> = ({
         <div className={`p-3 rounded-lg border ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
           <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
             <HardDrive className="w-3.5 h-3.5 text-indigo-400" />
-            <span>Host Available</span>
+            <span>HOST RAM</span>
           </div>
           <div className="text-lg font-bold font-mono">
-            {formatBytes(availableRAMBytes)}
+            {formatBytes(availableRAMBytes)} free
           </div>
-          <div className="text-xs font-medium text-slate-400 mt-0.5">
-            {availableRAMPercent !== null ? `${availableRAMPercent}% Available` : 'N/A'}
+          <div className="text-[11px] text-slate-400 mt-0.5 space-y-0.5 font-mono">
+            <div>Used: {formatBytes(usedRAMBytes)} / Total: {formatBytes(totalRAMBytes)}</div>
+            <div className="text-[10px] text-indigo-300 truncate" title={hostMemorySourceApi || 'Node.js os.totalmem() / os.freemem()'}>
+              Source: {hostMemorySourceApi || 'os.totalmem() / os.freemem()'}
+            </div>
           </div>
         </div>
 
@@ -294,16 +315,28 @@ export const MemoryHealthCard: React.FC<MemoryHealthCardProps> = ({
 
         {/* Metric 6: Resource Summary */}
         <div className={`p-3 rounded-lg border ${isDark ? 'bg-slate-950/60 border-slate-800' : 'bg-slate-50 border-slate-200'}`}>
-          <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
-            <Layers className="w-3.5 h-3.5 text-purple-400" />
-            <span>DOM / Resources</span>
+          <div className="flex items-center justify-between gap-1 text-xs text-slate-400 mb-1">
+            <span className="flex items-center gap-1">
+              <Layers className="w-3.5 h-3.5 text-purple-400" />
+              <span>Resource Census</span>
+            </span>
+            <span className={`text-[10px] font-mono px-1 rounded ${
+              resourceCounts.censusState === 'READY' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-400'
+            }`}>
+              {resourceCounts.censusState}
+            </span>
           </div>
-          <div className="text-xs font-mono space-y-0.5">
-            <div>Video: {resourceCounts.videoElements} | Canvas: {resourceCounts.canvasElements}</div>
-            <div>Loops: {resourceCounts.activeAnimationLoops} | Timers: {resourceCounts.activeTimers}</div>
+          <div className="text-[11px] font-mono space-y-0.5">
+            <div>Iframes: {resourceCounts.iframeElements} | Video (DOM): {resourceCounts.videoElements}</div>
+            <div>Canvas: {resourceCounts.canvasElements} | Loops: {resourceCounts.activeAnimationLoops} | Timers: {resourceCounts.activeTimers}</div>
+            {resourceCounts.videoInIframeStatus === 'unavailable' && (
+              <div className="text-[10px] text-amber-400/90 truncate" title="WHEP player inside iframe: inner video/RTCPeerConnection elements concealed cross-origin">
+                Iframe Player: Video/RTC inner count unavailable
+              </div>
+            )}
           </div>
           <div className="text-[10px] text-slate-500 mt-1 truncate">
-            Last: {lastSampleTime ? new Date(lastSampleTime).toLocaleTimeString() : 'N/A'}
+            Last Sample: {lastSampleTime ? new Date(lastSampleTime).toLocaleTimeString() : 'N/A'}
           </div>
         </div>
       </div>

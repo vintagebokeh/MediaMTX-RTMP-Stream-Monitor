@@ -9,6 +9,9 @@ export interface SystemMemoryResponse {
   sampledAt: string;
 }
 
+export type ResourceStatus = 'measured' | 'unavailable' | 'not_yet_sampled';
+export type BaselineState = 'COLLECTING_BASELINE' | 'READY';
+
 export interface ResourceCounts {
   videoElements: number;
   iframeElements: number;
@@ -18,6 +21,8 @@ export interface ResourceCounts {
   activeAnimationLoops: number;
   resizeObservers: number;
   subscribers: number;
+  videoInIframeStatus: ResourceStatus;
+  censusState: BaselineState;
 }
 
 export interface MemorySample {
@@ -26,6 +31,7 @@ export interface MemorySample {
   browserHeapTotalBytes: number | null;
   browserHeapLimitBytes: number | null;
   browserHeapUsagePercent: number | null;
+  hostTotalBytes?: number | null;
   hostUsedBytes: number | null;
   hostAvailableBytes: number | null;
   hostAvailablePercent: number | null;
@@ -127,13 +133,17 @@ export interface MemoryDiagnosticSnapshot {
 export interface MemoryMetricsSummary {
   latestSample: MemorySample | null;
   healthState: MemoryHealthState;
+  hostHealthState: MemoryHealthState;
   browserHeapHealthState: MemoryHealthState;
   overallHealthState: MemoryHealthState;
+  baselineState: BaselineState;
   leakSuspicion: LeakSuspicionState;
   suspicionReason: string | null;
   availableRAMBytes: number | null;
+  usedRAMBytes: number | null;
   totalRAMBytes: number | null;
   availableRAMPercent: number | null;
+  hostMemorySourceApi: string;
   browserHeapUsedBytes: number | null;
   browserHeapLimitBytes: number | null;
   browserHeap: BrowserHeapMetrics;

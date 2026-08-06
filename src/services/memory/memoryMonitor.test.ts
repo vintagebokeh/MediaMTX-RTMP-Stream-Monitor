@@ -88,10 +88,11 @@ test('3. Browser Heap warning & critical thresholds and correlation suspicion', 
     browserHeapCriticalPercent: 90
   });
 
-  // Add 5 samples so baseline requirement (>= 5) passes
+  // Add 5 samples spanning 5 minutes so baseline requirement (>= 5 minutes) passes
+  const startTime = Date.now() - 5 * 60 * 1000;
   for (let i = 0; i < 5; i++) {
     const sampleWarning: MemorySample = {
-      sampledAt: new Date(Date.now() + i * 10000).toISOString(),
+      sampledAt: new Date(startTime + i * 75000).toISOString(),
       browserHeapUsedBytes: (3000 + i * 100) * 1024 * 1024,
       browserHeapTotalBytes: 4000 * 1024 * 1024,
       browserHeapLimitBytes: 4000 * 1024 * 1024,
@@ -171,4 +172,54 @@ test('5. Timer cleanup on dispose', async () => {
 
   await new Promise((resolve) => setTimeout(resolve, 250));
   assert.strictEqual(called, countBefore, 'Timer should be cleaned up on dispose');
+});
+
+test('6. Resource census, iframe status, and baseline readiness state transition', async () => {
+  const service = new MemoryMonitorService();
+
+  // Initially before 5 minutes
+  const initialCounts = service.getResourceCounts();
+  assert.strictEqual(initialCounts.censusState, 'COLLECTING_BASELINE');
+
+  // Add sample with iframe = 1 and video = 0 (cross-origin WHEP player)
+  const sampleIframe: MemorySample = {
+    sampledAt: new Date(Date.now() - 6 * 60 * 1000).toISOString(),
+    browserHeapUsedBytes: 100 * 1024 * 1024,
+    browserHeapTotalBytes: 200 * 1024 * 1024,
+    browserHeapLimitBytes: 2048 * 1024 * 1024,
+    browserHeapUsagePercent: 5.0,
+    hostTotalBytes: 32 * 1024 * 1024 * 1024,
+    hostUsedBytes: 16 * 1024 * 1024 * 1024,
+    hostAvailableBytes: 16 * 1024 * 1024 * 1024,
+    hostAvailablePercent: 50,
+    videoElementCount: 0,
+    iframeCount: 1,
+    canvasCount: 2,
+    webSocketCount: 1,
+    activeTimers: 4,
+    activeAnimationLoops: 2,
+    resizeObserverCount: 1,
+    subscriberCount: 1,
+    adapterInstanceId: 'test-adapter',
+    telemetrySource: 'websocket'
+  };
+
+  const sampleRecent: MemorySample = {
+    ...sampleIframe,
+    sampledAt: new Date().toISOString()
+  };
+
+  service.addDirectSample(sampleIframe);
+  service.addDirectSample(sampleRecent);
+
+  const res = service.getResourceCounts();
+  assert.strictEqual(res.censusState, 'READY', 'Census state should be READY after 5 min span');
+  assert.strictEqual(res.iframeElements, 1);
+  assert.strictEqual(res.videoElements, 0);
+  assert.strictEqual(res.videoInIframeStatus, 'unavailable', 'Video in iframe must be marked unavailable');
+  assert.strictEqual(res.canvasElements, 2);
+  assert.strictEqual(res.activeAnimationLoops, 2);
+  assert.strictEqual(res.activeTimers, 4);
+
+  service.dispose();
 });

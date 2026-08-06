@@ -1,5 +1,6 @@
 import {
   AuditEvent,
+  BaselineState,
   BrowserHeapMetrics,
   IncidentRecord,
   LeakSuspicionState,
@@ -9,6 +10,7 @@ import {
   MemoryMonitorConfig,
   MemorySample,
   ResourceCounts,
+  ResourceStatus,
   SystemMemoryResponse
 } from '../../types/memory';
 import {
@@ -241,6 +243,7 @@ export class MemoryMonitorService {
       browserHeapTotalBytes,
       browserHeapLimitBytes,
       browserHeapUsagePercent,
+      hostTotalBytes: sysMem.totalBytes,
       hostUsedBytes: sysMem.usedBytes,
       hostAvailableBytes: sysMem.availableBytes,
       hostAvailablePercent: sysMem.availablePercent,
@@ -592,17 +595,40 @@ export class MemoryMonitorService {
     };
   }
 
+  public getBaselineState(): BaselineState {
+    if (this.samples.length < 2) return 'COLLECTING_BASELINE';
+    const first = this.samples[0];
+    const latest = this.samples[this.samples.length - 1];
+    const spanMs = new Date(latest.sampledAt).getTime() - new Date(first.sampledAt).getTime();
+    if (spanMs >= 5 * 60 * 1000 || this.samples.length >= 30) {
+      return 'READY';
+    }
+    return 'COLLECTING_BASELINE';
+  }
+
   public getResourceCounts(): ResourceCounts {
     const latest = this.getLatestSample();
+    const videoElements = latest?.videoElementCount ?? 0;
+    const iframeElements = latest?.iframeCount ?? 0;
+
+    let videoInIframeStatus: ResourceStatus = 'measured';
+    if (!latest) {
+      videoInIframeStatus = 'not_yet_sampled';
+    } else if (iframeElements > 0 && videoElements === 0) {
+      videoInIframeStatus = 'unavailable';
+    }
+
     return {
-      videoElements: latest?.videoElementCount ?? 0,
-      iframeElements: latest?.iframeCount ?? 0,
+      videoElements,
+      iframeElements,
       canvasElements: latest?.canvasCount ?? 0,
       webSockets: latest?.webSocketCount ?? 0,
       activeTimers: latest?.activeTimers ?? 0,
       activeAnimationLoops: latest?.activeAnimationLoops ?? 0,
       resizeObservers: latest?.resizeObserverCount ?? 0,
-      subscribers: latest?.subscriberCount ?? this.listeners.size
+      subscribers: latest?.subscriberCount ?? this.listeners.size,
+      videoInIframeStatus,
+      censusState: this.getBaselineState()
     };
   }
 
@@ -611,9 +637,14 @@ export class MemoryMonitorService {
       return { leakSuspicion: 'STABLE', suspicionReason: null };
     }
 
-    const count = this.samples.length;
-    if (count < 5) return { leakSuspicion: 'STABLE', suspicionReason: 'Collecting initial metrics baseline.' };
+    if (this.getBaselineState() === 'COLLECTING_BASELINE') {
+      return {
+        leakSuspicion: 'STABLE',
+        suspicionReason: 'Collecting baseline metrics (5 min window required).'
+      };
+    }
 
+    const count = this.samples.length;
     const latest = this.samples[count - 1];
     const { browserHeapGrowthRateMBPerMin } = this.calculateRatesAndTrends();
     const heapUsagePct = latest.browserHeapUsagePercent ?? 0;
@@ -865,13 +896,17 @@ export class MemoryMonitorService {
     return {
       latestSample: latest,
       healthState: overallHealthState,
+      hostHealthState,
       browserHeapHealthState,
       overallHealthState,
+      baselineState: this.getBaselineState(),
       leakSuspicion: correlation.leakSuspicion,
       suspicionReason: correlation.suspicionReason,
       availableRAMBytes: latest?.hostAvailableBytes ?? null,
-      totalRAMBytes: this.mockTotalRAMBytes,
+      usedRAMBytes: latest?.hostUsedBytes ?? null,
+      totalRAMBytes: latest?.hostTotalBytes ?? this.mockTotalRAMBytes,
       availableRAMPercent: latest?.hostAvailablePercent ?? null,
+      hostMemorySourceApi: 'Node.js os.totalmem() / os.freemem() (/api/v1/system-memory)',
       browserHeapUsedBytes: latest?.browserHeapUsedBytes ?? null,
       browserHeapLimitBytes: latest?.browserHeapLimitBytes ?? null,
       browserHeap,
