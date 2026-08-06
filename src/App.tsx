@@ -1,22 +1,17 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Header } from './components/Header';
-import { StreamPathCard } from './components/StreamPathCard';
-import { LiveStreamInspector } from './components/LiveStreamInspector';
-import { BitrateChart } from './components/BitrateChart';
-import { SessionsTable } from './components/SessionsTable';
-import { HostMetricsPanel } from './components/HostMetricsPanel';
-import { ExperimentsPanel } from './components/ExperimentsPanel';
-import { LogsViewer } from './components/LogsViewer';
-
-import { EnvConfigModal } from './components/EnvConfigModal';
-import { PathManagerModal } from './components/PathManagerModal';
+import React, { useEffect, useState } from 'react';
+import { DevRoleSwitcher } from './components/DevRoleSwitcher';
+import { OpsDashboard } from './views/OpsDashboard';
+import { ProducerDashboard } from './views/ProducerDashboard';
+import { ClientDashboard } from './views/ClientDashboard';
 
 import {
   BackendHealth,
   ConnectionConfig,
+  DashboardPersona,
   HostMetrics,
   LatencyMeasurement,
   LogEntry,
+  RuntimeConfig,
   StreamPath,
   TelemetrySnapshot
 } from './types';
@@ -29,19 +24,42 @@ export default function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const [health, setHealth] = useState<BackendHealth | null>(null);
+  const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [paths, setPaths] = useState<StreamPath[]>([]);
   const [selectedPathName, setSelectedPathName] = useState<string>('live/test');
   const [hostMetrics, setHostMetrics] = useState<HostMetrics | null>(null);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [latestLatencySample, setLatestLatencySample] = useState<LatencyMeasurement | null>(null);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'telemetry' | 'experiments' | 'host' | 'logs'>('overview');
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
-  const [isNewPathOpen, setIsNewPathOpen] = useState<boolean>(false);
+  // Routing / Persona state derived from URL
+  const getPersonaFromPath = (): DashboardPersona => {
+    if (typeof window === 'undefined') return 'operator';
+    const path = window.location.pathname.toLowerCase();
+    if (path.includes('producer')) return 'producer';
+    if (path.includes('client')) return 'client';
+    return 'operator';
+  };
 
-  const isDark = theme === 'dark';
+  const [currentPersona, setCurrentPersona] = useState<DashboardPersona>(getPersonaFromPath);
+
+  // Sync state with browser location/history
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPersona(getPersonaFromPath());
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const handleSelectPersona = (persona: DashboardPersona) => {
+    setCurrentPersona(persona);
+    const targetRoute = persona === 'operator' ? '/ops' : `/${persona}`;
+    if (window.location.pathname !== targetRoute) {
+      window.history.pushState({}, '', targetRoute);
+    }
+  };
 
   // Telemetry History for Chart
   const [history, setHistory] = useState<
@@ -67,19 +85,20 @@ export default function App() {
 
     const initData = async () => {
       try {
-        const h = await adapter.getHealth();
+        const [h, rc, p, hm, l, ls] = await Promise.all([
+          adapter.getHealth(),
+          adapter.getRuntimeConfig().catch(() => null),
+          adapter.getPaths(),
+          adapter.getHostMetrics(),
+          adapter.getLogs(),
+          adapter.getLatestLatencySample(selectedPathName)
+        ]);
+
         setHealth(h);
-
-        const p = await adapter.getPaths();
+        setRuntimeConfig(rc);
         setPaths(p);
-
-        const hm = await adapter.getHostMetrics();
         setHostMetrics(hm);
-
-        const l = await adapter.getLogs();
         setLogs(l);
-
-        const ls = await adapter.getLatestLatencySample(selectedPathName);
         setLatestLatencySample(ls);
       } catch (err) {
         console.warn('Init fetch error:', err);
@@ -89,9 +108,8 @@ export default function App() {
         setPaths(snapshot.paths);
         setHostMetrics(snapshot.host);
 
-        // Update selected path if needed
         const targetPath = snapshot.paths.find((item) => item.name === selectedPathName) || snapshot.paths[0];
-        
+
         if (targetPath) {
           const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString();
           setHistory((prev) => {
@@ -106,7 +124,6 @@ export default function App() {
                 discardedFrames: targetPath.metrics.discardedFrames
               }
             ];
-            // Keep last 30 data points
             return next.slice(-30);
           });
         }
@@ -124,14 +141,16 @@ export default function App() {
   const handleRefresh = async () => {
     setIsRefreshing(true);
     try {
-      const [h, p, hm, l, ls] = await Promise.all([
+      const [h, rc, p, hm, l, ls] = await Promise.all([
         adapter.getHealth(),
+        adapter.getRuntimeConfig().catch(() => null),
         adapter.getPaths(),
         adapter.getHostMetrics(),
         adapter.getLogs(),
         adapter.getLatestLatencySample(selectedPathName)
       ]);
       setHealth(h);
+      setRuntimeConfig(rc);
       setPaths(p);
       setHostMetrics(hm);
       setLogs(l);
@@ -150,13 +169,11 @@ export default function App() {
     setPaths(p);
   };
 
-  // Save new configuration
   const handleSaveConfig = (newConfig: ConnectionConfig) => {
     setConfig(newConfig);
     saveConfig(newConfig);
   };
 
-  // Create new path
   const handleCreatePath = async (name: string) => {
     await adapter.createPathConfig(name);
     const p = await adapter.getPaths();
@@ -166,7 +183,6 @@ export default function App() {
     setLogs(l);
   };
 
-  // Delete path
   const handleDeletePath = async (name: string) => {
     await adapter.deletePathConfig(name);
     const p = await adapter.getPaths();
@@ -176,175 +192,79 @@ export default function App() {
     setLogs(l);
   };
 
-  // Kick publisher
   const handleKickPublisher = async (pathName: string) => {
     await adapter.kickPublisher(pathName);
     handleRefresh();
   };
 
-  // Kick reader
   const handleKickReader = async (pathName: string, readerId: string) => {
     await adapter.kickReader(pathName, readerId);
     handleRefresh();
   };
 
-  const currentPath = paths.find((p) => p.name === selectedPathName) || paths[0] || {
-    name: 'live/test',
-    ready: true,
-    tracks: ['H264', 'AAC'],
-    bytesReceived: 2700000000,
-    bytesSent: 1350000000,
-    publisher: {
-      id: 'pub-live-test-01',
-      type: 'rtmpConn',
-      remoteAddr: '192.168.1.45:58410',
-      state: 'publishing',
-      videoCodec: 'H.264',
-      videoResolution: '1920x1080',
-      videoFps: 60,
-      audioCodec: 'AAC',
-      audioSampleRate: 48000,
-      audioChannels: 'stereo',
-      targetBitrateKbps: 6000,
-      currentBitrateKbps: 6000,
-      connectedAt: new Date().toISOString(),
-      bytesReceived: 2700000000
-    },
-    readers: [
-      {
-        id: 'rd-webrtc-892',
-        type: 'webrtcConn',
-        remoteAddr: '10.0.0.12:61200',
-        protocol: 'WebRTC',
-        connectedAt: new Date().toISOString(),
-        bytesSent: 1350000000
-      }
-    ],
-    metrics: {
-      currentBitrateKbps: 6000,
-      targetBitrateKbps: 6000,
-      latencyMs: 2000,
-      inboundErrors: 0,
-      discardedFrames: 0,
-      fps: 60,
-      jitterMs: 1.5,
-      keyframeIntervalSec: 2.0
-    }
-  };
-
   return (
     <div className={`min-h-screen font-sans selection:bg-indigo-500 selection:text-white ${
-      isDark ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
+      theme === 'dark' ? 'bg-slate-950 text-slate-100' : 'bg-slate-50 text-slate-900'
     }`}>
-      
-      {/* Top Navigation Header */}
-      <Header
-        health={health}
-        config={config}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenNewPath={() => setIsNewPathOpen(true)}
-        onRefresh={handleRefresh}
-        isRefreshing={isRefreshing}
-        theme={theme}
-        onToggleTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
-      />
-
-      {/* Main Body Layout */}
-      <main className="max-w-7xl mx-auto px-3 sm:px-5 lg:px-8 py-6 space-y-6">
-        
-        {/* TAB 1: OVERVIEW (Hero Card + Live Inspector Player + Sessions) */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6 animate-in fade-in duration-150">
-            {/* Stream Path Status Card */}
-            <StreamPathCard
-              path={currentPath}
-              allPaths={paths}
-              selectedPathName={selectedPathName}
-              onSelectPath={(name) => setSelectedPathName(name)}
-              onDeletePath={handleDeletePath}
-              latestLatencySample={latestLatencySample}
-              onRecordLatencySample={handleRecordLatencySample}
-              theme={theme}
-            />
-
-            {/* Visual Stream Inspector Canvas & Audio VU Meter */}
-            <LiveStreamInspector path={currentPath} theme={theme} adapter={adapter} />
-
-            {/* Real-time Bitrate Sparkline */}
-            <BitrateChart history={history} theme={theme} />
-
-            {/* Active Sessions (Publisher & Readers) */}
-            <SessionsTable
-              pathName={currentPath.name}
-              publisher={currentPath.publisher}
-              readers={currentPath.readers}
-              onKickPublisher={handleKickPublisher}
-              onKickReader={handleKickReader}
-              theme={theme}
-            />
-          </div>
-        )}
-
-        {/* TAB 2: TELEMETRY & CHARTS */}
-        {activeTab === 'telemetry' && (
-          <div className="space-y-6 animate-in fade-in duration-150">
-            <StreamPathCard
-              path={currentPath}
-              allPaths={paths}
-              selectedPathName={selectedPathName}
-              onSelectPath={(name) => setSelectedPathName(name)}
-              onDeletePath={handleDeletePath}
-              latestLatencySample={latestLatencySample}
-              onRecordLatencySample={handleRecordLatencySample}
-              theme={theme}
-            />
-            <BitrateChart history={history} theme={theme} />
-          </div>
-        )}
-
-        {/* TAB 3: BENCHMARK EXPERIMENTS */}
-        {activeTab === 'experiments' && (
-          <div className="space-y-6 animate-in fade-in duration-150">
-            <ExperimentsPanel adapter={adapter} theme={theme} />
-          </div>
-        )}
-
-        {/* TAB 4: HOST OPERATING SYSTEM METRICS */}
-
-        {activeTab === 'host' && (
-          <div className="space-y-6 animate-in fade-in duration-150">
-            <HostMetricsPanel metrics={hostMetrics} theme={theme} />
-          </div>
-        )}
-
-        {/* TAB 4: AUDIT LOGS */}
-        {activeTab === 'logs' && (
-          <div className="space-y-6 animate-in fade-in duration-150">
-            <LogsViewer logs={logs} theme={theme} />
-          </div>
-        )}
-
-      </main>
-
-      {/* Modals */}
-      <EnvConfigModal
-        isOpen={isSettingsOpen}
-        config={config}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={handleSaveConfig}
+      {/* Dev Mode Persona Switcher Header */}
+      <DevRoleSwitcher
+        currentPersona={currentPersona}
+        onSelectPersona={handleSelectPersona}
         theme={theme}
       />
 
-      <PathManagerModal
-        isOpen={isNewPathOpen}
-        onClose={() => setIsNewPathOpen(false)}
-        onCreatePath={handleCreatePath}
-        theme={theme}
-      />
+      {/* Render selected view */}
+      {currentPersona === 'operator' && (
+        <OpsDashboard
+          health={health}
+          config={config}
+          paths={paths}
+          selectedPathName={selectedPathName}
+          setSelectedPathName={setSelectedPathName}
+          hostMetrics={hostMetrics}
+          logs={logs}
+          latestLatencySample={latestLatencySample}
+          history={history}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          adapter={adapter}
+          theme={theme}
+          setTheme={setTheme}
+          onRecordLatencySample={handleRecordLatencySample}
+          onDeletePath={handleDeletePath}
+          onCreatePath={handleCreatePath}
+          onKickPublisher={handleKickPublisher}
+          onKickReader={handleKickReader}
+          onSaveConfig={handleSaveConfig}
+        />
+      )}
 
+      {currentPersona === 'producer' && (
+        <ProducerDashboard
+          paths={paths}
+          health={health}
+          config={runtimeConfig}
+          selectedPathName={selectedPathName}
+          onSelectPath={setSelectedPathName}
+          adapter={adapter}
+          theme={theme}
+          setTheme={setTheme}
+          onRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
+        />
+      )}
+
+      {currentPersona === 'client' && (
+        <ClientDashboard
+          paths={paths}
+          health={health}
+          config={runtimeConfig}
+          theme={theme}
+          setTheme={setTheme}
+          onRefresh={handleRefresh}
+          isRefreshing={isRefreshing}
+        />
+      )}
     </div>
   );
 }
-

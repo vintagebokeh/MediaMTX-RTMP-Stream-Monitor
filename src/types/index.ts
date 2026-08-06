@@ -155,3 +155,5 @@ export interface MonitoringApi {
   stopExperiment(experimentId: string): Promise<void>;
 }
 
+export * from './persona';
+
