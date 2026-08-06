@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { DevRoleSwitcher } from './components/DevRoleSwitcher';
 import { TelemetryDebugBadge } from './components/TelemetryDebugBadge';
 import { OpsDashboard } from './views/OpsDashboard';
@@ -33,6 +33,16 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [latestLatencySample, setLatestLatencySample] = useState<LatencyMeasurement | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, []);
 
   // Telemetry Health Tracking
   const [lastTelemetryReceivedAt, setLastTelemetryReceivedAt] = useState<number | null>(null);
@@ -225,7 +235,11 @@ export default function App() {
     } catch (e) {
       console.warn('Refresh error:', e);
     } finally {
-      setTimeout(() => setIsRefreshing(false), 400);
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      refreshTimerRef.current = setTimeout(() => {
+        setIsRefreshing(false);
+        refreshTimerRef.current = null;
+      }, 400);
     }
   };
 

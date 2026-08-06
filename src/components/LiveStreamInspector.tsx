@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { RuntimeConfig, StreamPath } from '../types';
 import { IMonitorApiAdapter } from '../services/api/IMonitorApiAdapter';
+import { incrementAnimationLoopCount, decrementAnimationLoopCount } from '../services/api/telemetryDebug';
 
 interface LiveStreamInspectorProps {
   path: StreamPath;
@@ -32,17 +33,34 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const audioBarLRef = useRef<HTMLDivElement | null>(null);
+  const audioBarRRef = useRef<HTMLDivElement | null>(null);
+  const audioTextLRef = useRef<HTMLSpanElement | null>(null);
+  const audioTextRRef = useRef<HTMLSpanElement | null>(null);
+
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
-  const [audioLevelL, setAudioLevelL] = useState<number>(78);
-  const [audioLevelR, setAudioLevelR] = useState<number>(82);
+
+  // Keep changing props and state in refs to avoid recreating animation loop
+  const pathRef = useRef(path);
+  pathRef.current = path;
+
+  const { publisher, metrics } = path;
+  const publisherRef = useRef(publisher);
+  publisherRef.current = publisher;
+  const metricsRef = useRef(metrics);
+  metricsRef.current = metrics;
+
+  const isPlayingRef = useRef(isPlaying);
+  isPlayingRef.current = isPlaying;
 
   const [runtimeConfig, setRuntimeConfig] = useState<RuntimeConfig | null>(null);
   const [configLoadError, setConfigLoadError] = useState<boolean>(false);
   const [webrtcFailed, setWebrtcFailed] = useState<boolean>(false);
   const [hlsFailed, setHlsFailed] = useState<boolean>(false);
   const [isDebugOpen, setIsDebugOpen] = useState<boolean>(false);
-
-  const { publisher, metrics } = path;
 
   // Fetch runtime configuration from Monitoring API
   useEffect(() => {
@@ -69,6 +87,31 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
   const canUseWebRTC = runtimeConfig?.features?.livePreviewEnabled && runtimeConfig?.playback?.webrtcUrl && !webrtcFailed;
   const canUseHLS = !canUseWebRTC && runtimeConfig?.playback?.hlsUrl && !hlsFailed;
   const useCanvasFallback = !canUseWebRTC && !canUseHLS;
+
+  // Explicit media element cleanup when switching source, path, or on unmount
+  useEffect(() => {
+    const currentVideo = videoRef.current;
+    const currentIframe = iframeRef.current;
+
+    return () => {
+      if (currentVideo) {
+        try {
+          currentVideo.pause();
+          if (currentVideo.srcObject instanceof MediaStream) {
+            currentVideo.srcObject.getTracks().forEach((track) => track.stop());
+          }
+          currentVideo.srcObject = null;
+          currentVideo.removeAttribute('src');
+          currentVideo.load();
+        } catch (_) {}
+      }
+      if (currentIframe) {
+        try {
+          currentIframe.src = 'about:blank';
+        } catch (_) {}
+      }
+    };
+  }, [canUseWebRTC, canUseHLS, runtimeConfig?.playback?.webrtcUrl, runtimeConfig?.playback?.hlsUrl, path.name]);
 
   // Failure reason determination logic
   const getFailureReason = (): string | null => {
@@ -137,7 +180,7 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
   useEffect(() => {
     if (!useCanvasFallback) return;
 
-    let animId: number;
+    let animId: number | null = null;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -145,9 +188,15 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
     if (!ctx) return;
 
     let frameCount = 0;
+    incrementAnimationLoopCount();
 
     const render = () => {
       frameCount++;
+      const currentPath = pathRef.current;
+      const currentPublisher = publisherRef.current;
+      const currentMetrics = metricsRef.current;
+      const currentIsPlaying = isPlayingRef.current;
+
       const w = canvas.width;
       const h = canvas.height;
 
@@ -155,7 +204,7 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
       ctx.fillStyle = '#0f172a';
       ctx.fillRect(0, 0, w, h);
 
-      if (isPlaying) {
+      if (currentIsPlaying) {
         // 1. Draw SMPTE Color Bars
         const colors = [
           '#c0c0c0', '#c0c000', '#00c0c0', '#00c000',
@@ -199,13 +248,13 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
 
         ctx.fillStyle = '#ffffff';
         ctx.font = 'bold 13px sans-serif';
-        ctx.fillText(`PATH: ${path.name}`, 44, 38);
+        ctx.fillText(`PATH: ${currentPath.name}`, 44, 38);
 
         ctx.fillStyle = '#94a3b8';
         ctx.font = '11px monospace';
-        ctx.fillText(`Resolution: ${publisher?.videoResolution || '1920x1080'}`, 32, 58);
-        ctx.fillText(`Video: ${publisher?.videoCodec || 'H.264'} @ ${publisher?.videoFps || 60} FPS`, 32, 74);
-        ctx.fillText(`Bitrate: ${(metrics.currentBitrateKbps / 1000).toFixed(2)} Mbps (Target 6.00)`, 32, 90);
+        ctx.fillText(`Resolution: ${currentPublisher?.videoResolution || '1920x1080'}`, 32, 58);
+        ctx.fillText(`Video: ${currentPublisher?.videoCodec || 'H.264'} @ ${currentPublisher?.videoFps || 60} FPS`, 32, 74);
+        ctx.fillText(`Bitrate: ${(currentMetrics.currentBitrateKbps / 1000).toFixed(2)} Mbps (Target 6.00)`, 32, 90);
         ctx.fillText(`Timecode: ${new Date().toISOString().substring(11, 21)}`, 32, 106);
 
         // Watermark Right
@@ -213,11 +262,13 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
         ctx.font = 'bold 16px sans-serif';
         ctx.fillText('1920x1080 60fps', w - 160, 36);
 
-        // Dynamic audio meter simulation
-        const l = Math.floor(75 + Math.sin(frameCount / 10) * 15 + Math.random() * 5);
-        const r = Math.floor(78 + Math.cos(frameCount / 12) * 14 + Math.random() * 5);
-        setAudioLevelL(Math.min(98, Math.max(10, l)));
-        setAudioLevelR(Math.min(98, Math.max(10, r)));
+        // Direct DOM update for VU meters to avoid 60 FPS React state re-renders
+        const l = Math.min(98, Math.max(10, Math.floor(75 + Math.sin(frameCount / 10) * 15 + Math.random() * 5)));
+        const r = Math.min(98, Math.max(10, Math.floor(78 + Math.cos(frameCount / 12) * 14 + Math.random() * 5)));
+        if (audioBarLRef.current) audioBarLRef.current.style.width = `${l}%`;
+        if (audioBarRRef.current) audioBarRRef.current.style.width = `${r}%`;
+        if (audioTextLRef.current) audioTextLRef.current.textContent = `-${100 - l} dB`;
+        if (audioTextRRef.current) audioTextRRef.current.textContent = `-${100 - r} dB`;
       } else {
         // Paused Screen
         ctx.fillStyle = '#94a3b8';
@@ -230,12 +281,16 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
       animId = requestAnimationFrame(render);
     };
 
-    render();
+    animId = requestAnimationFrame(render);
 
     return () => {
-      cancelAnimationFrame(animId);
+      if (animId !== null) {
+        cancelAnimationFrame(animId);
+        animId = null;
+      }
+      decrementAnimationLoopCount();
     };
-  }, [isPlaying, path, publisher, metrics, useCanvasFallback]);
+  }, [useCanvasFallback]);
 
   return (
     <div
@@ -308,6 +363,7 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
           {/* 1. WebRTC Stream Element */}
           {canUseWebRTC && (
             <iframe
+              ref={iframeRef}
               src={runtimeConfig.playback.webrtcUrl!}
               title="WebRTC Stream Preview"
               className="w-full h-full border-0"
@@ -318,6 +374,7 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
           {/* 2. HLS Fallback Video Element */}
           {canUseHLS && (
             <video
+              ref={videoRef}
               src={runtimeConfig.playback.hlsUrl!}
               autoPlay
               playsInline
@@ -414,12 +471,13 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
                 <div className="space-y-1 mb-3">
                   <div className="flex justify-between text-[11px] font-mono text-slate-400">
                     <span>Left (L)</span>
-                    <span>-{100 - audioLevelL} dB</span>
+                    <span ref={audioTextLRef}>-22 dB</span>
                   </div>
                   <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
                     <div
+                      ref={audioBarLRef}
                       className="bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 h-1.5 rounded-full transition-all duration-100"
-                      style={{ width: `${audioLevelL}%` }}
+                      style={{ width: '78%' }}
                     />
                   </div>
                 </div>
@@ -428,12 +486,13 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
                 <div className="space-y-1">
                   <div className="flex justify-between text-[11px] font-mono text-slate-400">
                     <span>Right (R)</span>
-                    <span>-{100 - audioLevelR} dB</span>
+                    <span ref={audioTextRRef}>-18 dB</span>
                   </div>
                   <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden p-0.5">
                     <div
+                      ref={audioBarRRef}
                       className="bg-gradient-to-r from-emerald-500 via-amber-400 to-red-500 h-1.5 rounded-full transition-all duration-100"
-                      style={{ width: `${audioLevelR}%` }}
+                      style={{ width: '82%' }}
                     />
                   </div>
                 </div>

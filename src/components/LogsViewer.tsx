@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Terminal, Search, Copy, Check, Filter } from 'lucide-react';
 import { LogEntry } from '../types';
 
@@ -12,6 +12,17 @@ export const LogsViewer: React.FC<LogsViewerProps> = ({ logs, theme = 'light' })
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [copied, setCopied] = useState<boolean>(false);
   const isDark = theme === 'dark';
+
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const filteredLogs = logs.filter((log) => {
     if (filterLevel !== 'all' && log.level !== filterLevel) return false;
@@ -31,7 +42,11 @@ export const LogsViewer: React.FC<LogsViewerProps> = ({ logs, theme = 'light' })
       .join('\n');
     navigator.clipboard.writeText(text);
     setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
+      setCopied(false);
+      copyTimerRef.current = null;
+    }, 2000);
   };
 
   const getLevelBadge = (level: LogEntry['level']) => {

@@ -71,8 +71,14 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     return this.subscribers.size;
   }
 
+  private pushLog(entry: LogEntry) {
+    this.logs.push(entry);
+    if (this.logs.length > 200) {
+      this.logs = this.logs.slice(-200);
+    }
+  }
+
   private initDefaultMockData() {
-    // Exact prompt specification:
     // - one active path: live/test
     // - one publisher
     // - one reader
@@ -337,6 +343,9 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     const exp = this.experiments.find((e) => e.id === experimentId);
     if (exp) {
       exp.latencySamples.push(latencyMs);
+      if (exp.latencySamples.length > 100) {
+        exp.latencySamples = exp.latencySamples.slice(-100);
+      }
       const sum = exp.latencySamples.reduce((a, b) => a + b, 0);
       exp.averageLatencyMs = +(sum / exp.latencySamples.length).toFixed(1);
     }
@@ -371,7 +380,7 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     const initialLen = target.readers.length;
     target.readers = target.readers.filter((r) => r.id !== readerId);
     if (target.readers.length < initialLen) {
-      this.logs.push({
+      this.pushLog({
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
         level: 'warn',
@@ -390,7 +399,7 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     target.publisher = null;
     target.ready = false;
     target.metrics.currentBitrateKbps = 0;
-    this.logs.push({
+    this.pushLog({
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       level: 'warn',
@@ -440,7 +449,7 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     };
 
     this.paths.set(cleanName, newPath);
-    this.logs.push({
+    this.pushLog({
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       level: 'info',
@@ -458,7 +467,7 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     }
     const res = this.paths.delete(pathName);
     if (res) {
-      this.logs.push({
+      this.pushLog({
         id: `log-${Date.now()}`,
         timestamp: new Date().toISOString(),
         level: 'info',

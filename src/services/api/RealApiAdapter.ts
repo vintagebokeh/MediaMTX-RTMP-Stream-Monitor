@@ -359,8 +359,27 @@ export class RealApiAdapter implements IMonitorApiAdapter {
     }
   }
 
+  private closeWebSocket() {
+    if (this.wsReconnectTimer) {
+      clearTimeout(this.wsReconnectTimer);
+      this.wsReconnectTimer = null;
+    }
+    if (this.ws) {
+      try {
+        this.ws.onopen = null;
+        this.ws.onmessage = null;
+        this.ws.onerror = null;
+        this.ws.onclose = null;
+        this.ws.close();
+      } catch (_) {}
+      this.ws = null;
+    }
+  }
+
   private handleWsFailure() {
     if (this.isDisposed || this.subscribers.size === 0) return;
+
+    this.closeWebSocket();
 
     // Start HTTP polling as fallback if not already running
     if (!this.pollInterval) {
@@ -428,14 +447,7 @@ export class RealApiAdapter implements IMonitorApiAdapter {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
-    if (this.ws) {
-      try { this.ws.close(); } catch (_) {}
-      this.ws = null;
-    }
-    if (this.wsReconnectTimer) {
-      clearTimeout(this.wsReconnectTimer);
-      this.wsReconnectTimer = null;
-    }
+    this.closeWebSocket();
     this.activeTransport = 'none';
     this.isPollPending = false;
     logTelemetryLifecycle('transport stopped', this.instanceId, { reason });

@@ -1,5 +1,11 @@
-import React from 'react';
-import { isTelemetryDebug, TelemetrySource } from '../services/api/telemetryDebug';
+import React, { useEffect, useState } from 'react';
+import {
+  isTelemetryDebug,
+  TelemetrySource,
+  getAnimationLoopCount,
+  addMemoryDiagnosticSample,
+  MemoryDiagnosticSample
+} from '../services/api/telemetryDebug';
 
 export interface TelemetryDebugBadgeProps {
   healthStatus: 'healthy' | 'degraded' | 'stale';
@@ -16,6 +22,36 @@ export const TelemetryDebugBadge: React.FC<TelemetryDebugBadgeProps> = ({
   adapterInstanceId,
   subscriberCount
 }) => {
+  const [latestSample, setLatestSample] = useState<MemoryDiagnosticSample | null>(null);
+
+  useEffect(() => {
+    if (!isTelemetryDebug) return;
+
+    const reportDiagnostics = () => {
+      const perfMemory = (performance as any)?.memory;
+      const sample: MemoryDiagnosticSample = {
+        timestamp: new Date().toISOString(),
+        usedJSHeapSize: perfMemory?.usedJSHeapSize,
+        totalJSHeapSize: perfMemory?.totalJSHeapSize,
+        activeVideoElements: document.getElementsByTagName('video').length,
+        activeIframeElements: document.getElementsByTagName('iframe').length,
+        activeCanvasElements: document.getElementsByTagName('canvas').length,
+        activeAdapterInstanceId: adapterInstanceId,
+        activeSubscriberCount: subscriberCount,
+        activeTransportType: source,
+        activeAnimationLoopCount: getAnimationLoopCount()
+      };
+
+      addMemoryDiagnosticSample(sample);
+      setLatestSample(sample);
+      console.log('[Memory Diagnostic]', sample);
+    };
+
+    reportDiagnostics();
+    const timer = setInterval(reportDiagnostics, 10000);
+    return () => clearInterval(timer);
+  }, [adapterInstanceId, subscriberCount, source]);
+
   if (!isTelemetryDebug) {
     return null;
   }

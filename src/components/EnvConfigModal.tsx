@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { X, Save, Copy, Check, Info, Server, Wifi, ShieldAlert } from 'lucide-react';
 import { AppEnv, ConnectionConfig } from '../types';
 
@@ -30,6 +30,17 @@ export const EnvConfigModal: React.FC<EnvConfigModalProps> = ({
   const [wsUrl, setWsUrl] = useState<string>(config.wsUrl || `${currentWsProtocol}://${currentHost}:8090/ws/live`);
   const [useMockData, setUseMockData] = useState<boolean>(config.useMockData);
   const [copiedEnv, setCopiedEnv] = useState<boolean>(false);
+
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+        copyTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const applyPreset = (preset: AppEnv) => {
     setAppEnv(preset);
@@ -70,7 +81,11 @@ VITE_USE_MOCK_DATA="${useMockData}"
   const copySnippet = () => {
     navigator.clipboard.writeText(envSnippet);
     setCopiedEnv(true);
-    setTimeout(() => setCopiedEnv(false), 2000);
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => {
+      setCopiedEnv(false);
+      copyTimerRef.current = null;
+    }, 2000);
   };
 
   return (

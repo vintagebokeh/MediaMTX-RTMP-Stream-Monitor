@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { StreamPath, BackendHealth, RuntimeConfig } from '../types';
 import { selectClientViewModel } from '../selectors/clientViewModel';
 import {
@@ -36,6 +36,18 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
 }) => {
   const isDark = theme === 'dark';
   const vm = selectClientViewModel(paths, health, config);
+  const iframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  useEffect(() => {
+    const currentIframe = iframeRef.current;
+    return () => {
+      if (currentIframe) {
+        try {
+          currentIframe.src = 'about:blank';
+        } catch (_) {}
+      }
+    };
+  }, [vm.previewUrl]);
 
   // Format start time nicely
   const formatStartTime = (isoString: string | null) => {
@@ -191,6 +203,7 @@ export const ClientDashboard: React.FC<ClientDashboardProps> = ({
             {vm.status === 'online' || vm.status === 'warning' ? (
               vm.previewUrl ? (
                 <iframe
+                  ref={iframeRef}
                   src={vm.previewUrl}
                   title="Live Broadcast Preview"
                   className="w-full h-full border-0"
