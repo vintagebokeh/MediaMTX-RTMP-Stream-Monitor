@@ -20,9 +20,14 @@ export const EnvConfigModal: React.FC<EnvConfigModalProps> = ({
   if (!isOpen) return null;
 
   const isDark = theme === 'dark';
+
+  const currentHost = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
+  const currentProtocol = typeof window !== 'undefined' && window.location?.protocol === 'https:' ? 'https' : 'http';
+  const currentWsProtocol = currentProtocol === 'https' ? 'wss' : 'ws';
+
   const [appEnv, setAppEnv] = useState<AppEnv>(config.appEnv);
-  const [apiUrl, setApiUrl] = useState<string>(config.apiUrl || 'http://127.0.0.1:8090');
-  const [wsUrl, setWsUrl] = useState<string>(config.wsUrl || 'ws://127.0.0.1:8090/ws/live');
+  const [apiUrl, setApiUrl] = useState<string>(config.apiUrl || `${currentProtocol}://${currentHost}:8090`);
+  const [wsUrl, setWsUrl] = useState<string>(config.wsUrl || `${currentWsProtocol}://${currentHost}:8090/ws/live`);
   const [useMockData, setUseMockData] = useState<boolean>(config.useMockData);
   const [copiedEnv, setCopiedEnv] = useState<boolean>(false);
 
@@ -30,12 +35,12 @@ export const EnvConfigModal: React.FC<EnvConfigModalProps> = ({
     setAppEnv(preset);
     switch (preset) {
       case 'local':
-        setApiUrl('http://127.0.0.1:8090');
-        setWsUrl('ws://127.0.0.1:8090/ws/live');
+        setApiUrl(`${currentProtocol}://localhost:8090`);
+        setWsUrl(`${currentWsProtocol}://localhost:8090/ws/live`);
         break;
       case 'lan':
-        setApiUrl('http://192.168.1.50:8090');
-        setWsUrl('ws://192.168.1.50:8090/ws/live');
+        setApiUrl(`${currentProtocol}://${currentHost}:8090`);
+        setWsUrl(`${currentWsProtocol}://${currentHost}:8090/ws/live`);
         break;
       case 'remote':
         setApiUrl('https://rtmp-monitor-api.example.com');
@@ -152,7 +157,7 @@ VITE_USE_MOCK_DATA="${useMockData}"
                 }`}
               >
                 <div className="font-bold">1. Local</div>
-                <div className="text-[10px] font-mono opacity-75">http://127.0.0.1:8090</div>
+                <div className="text-[10px] font-mono opacity-75">http://localhost:8090</div>
               </button>
 
               <button
@@ -169,7 +174,7 @@ VITE_USE_MOCK_DATA="${useMockData}"
                 }`}
               >
                 <div className="font-bold">2. LAN Network</div>
-                <div className="text-[10px] font-mono opacity-75">http://192.168.x.x:8090</div>
+                <div className="text-[10px] font-mono opacity-75">http://{currentHost}:8090</div>
               </button>
 
               <button
@@ -203,7 +208,7 @@ VITE_USE_MOCK_DATA="${useMockData}"
               type="text"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
-              placeholder="http://127.0.0.1:8090"
+              placeholder={`http://${currentHost}:8090`}
               className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 ${
                 isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
               }`}
@@ -222,7 +227,7 @@ VITE_USE_MOCK_DATA="${useMockData}"
               type="text"
               value={wsUrl}
               onChange={(e) => setWsUrl(e.target.value)}
-              placeholder="ws://127.0.0.1:8090/ws/live"
+              placeholder={`ws://${currentHost}:8090/ws/live`}
               className={`w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500 ${
                 isDark ? 'bg-slate-950 border-slate-800 text-slate-200' : 'bg-slate-50 border-slate-300 text-slate-900'
               }`}

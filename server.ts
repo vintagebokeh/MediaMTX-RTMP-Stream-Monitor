@@ -120,12 +120,36 @@ app.get('/api/v1/runtime-config', (req, res) => {
   const streamPath = (req.query.path as string) || 'live/test';
   const environment = process.env.VITE_APP_ENV || 'local';
 
+  // Extract host from request header and strip the dashboard port (e.g. "192.168.1.30:3000" -> "192.168.1.30")
+  const rawHost = req.get('host') || 'localhost';
+  const requestHost = rawHost.replace(/:\d+$/, '');
+
+  // Environment overrides if provided
+  const webrtcOverride = process.env.PUBLIC_WEBRTC_BASE_URL || process.env.WEBRTC_PLAYBACK_URL;
+  const hlsOverride = process.env.PUBLIC_HLS_BASE_URL || process.env.HLS_PLAYBACK_URL;
+
+  let webrtcUrl: string;
+  if (webrtcOverride) {
+    const base = webrtcOverride.replace(/\/$/, '');
+    webrtcUrl = base.includes(streamPath) ? base : `${base}/${streamPath}`;
+  } else {
+    webrtcUrl = `http://${requestHost}:8889/${streamPath}`;
+  }
+
+  let hlsUrl: string;
+  if (hlsOverride) {
+    const base = hlsOverride.replace(/\/$/, '');
+    hlsUrl = base.includes(streamPath) ? base : `${base}/${streamPath}/index.m3u8`;
+  } else {
+    hlsUrl = `http://${requestHost}:8888/${streamPath}/index.m3u8`;
+  }
+
   res.json({
     environment,
     streamPath,
     playback: {
-      webrtcUrl: process.env.WEBRTC_PLAYBACK_URL || `http://127.0.0.1:8889/${streamPath}`,
-      hlsUrl: process.env.HLS_PLAYBACK_URL || `http://127.0.0.1:8888/${streamPath}/index.m3u8`
+      webrtcUrl,
+      hlsUrl
     },
     features: {
       livePreviewEnabled: true

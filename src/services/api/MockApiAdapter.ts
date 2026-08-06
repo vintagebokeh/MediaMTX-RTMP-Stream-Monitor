@@ -219,12 +219,13 @@ export class MockApiAdapter implements IMonitorApiAdapter {
   }
 
   async getRuntimeConfig(): Promise<RuntimeConfig> {
+    const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
     return {
       environment: this.config.appEnv || 'local',
       streamPath: 'live/test',
       playback: {
-        webrtcUrl: 'http://127.0.0.1:8889/live/test',
-        hlsUrl: 'http://127.0.0.1:8888/live/test/index.m3u8'
+        webrtcUrl: `http://${host}:8889/live/test`,
+        hlsUrl: `http://${host}:8888/live/test/index.m3u8`
       },
       features: {
         livePreviewEnabled: true

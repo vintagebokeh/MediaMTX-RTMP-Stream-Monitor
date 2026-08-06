@@ -44,12 +44,13 @@ export class RealApiAdapter implements IMonitorApiAdapter {
       return await res.json();
     } catch (err) {
       console.warn('RealApiAdapter getRuntimeConfig error:', err);
+      const host = typeof window !== 'undefined' && window.location?.hostname ? window.location.hostname : 'localhost';
       return {
         environment: this.config.appEnv || 'local',
         streamPath: 'live/test',
         playback: {
-          webrtcUrl: null,
-          hlsUrl: null
+          webrtcUrl: `http://${host}:8889/live/test`,
+          hlsUrl: `http://${host}:8888/live/test/index.m3u8`
         },
         features: {
           livePreviewEnabled: true
