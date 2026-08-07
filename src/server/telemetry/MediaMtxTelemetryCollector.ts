@@ -1,4 +1,4 @@
-import { NormalizedStreamSnapshot, TelemetryState } from '../../types';
+import { BitrateCompliance, NormalizedStreamSnapshot, TelemetryState } from '../../types';
 
 export interface ByteSample {
   bytes: number;
@@ -13,8 +13,14 @@ export interface BitrateDiagnostics {
   elapsedMs: number | null;
   bitrateBps: number | null;
   bitrateKbps: number | null;
+  smoothedBitrateKbps: number | null;
   selectedMetricSource: 'prometheus' | 'control-api' | 'none';
   sampledAt: string;
+}
+
+export interface PathBitrateHistory {
+  smoothedBitrate: number | null;
+  samples: Array<{ kbps: number; timestampMs: number }>;
 }
 
 export interface MediaMtxCollectorConfig {
@@ -25,6 +31,7 @@ export interface MediaMtxCollectorConfig {
 export class MediaMtxTelemetryCollector {
   private byteSamples = new Map<string, ByteSample>();
   private pathDiagnostics = new Map<string, BitrateDiagnostics>();
+  private pathBitrateHistory = new Map<string, PathBitrateHistory>();
   private collectorSequence = 0;
   private controlApiUrl: string;
   private metricsUrl: string;
@@ -41,6 +48,7 @@ export class MediaMtxTelemetryCollector {
   public clearByteSample(pathName: string): void {
     this.byteSamples.delete(pathName);
     this.pathDiagnostics.delete(pathName);
+    this.pathBitrateHistory.delete(pathName);
   }
 
   public getCollectorSequence(): number {
@@ -317,14 +325,23 @@ export class MediaMtxTelemetryCollector {
       inboundFramesInError = metricsData.pathInboundFramesInError.get(pathName)!;
     }
 
-    let measuredBitrateKbps: number | null = null;
+    let instantBitrateKbps: number | null = null;
+    let smoothedBitrateKbps: number | null = null;
+    let averageBitrateKbps60s: number | null = null;
+    let peakBitrateKbps60s: number | null = null;
+    const configuredTargetBitrateKbps: number = 6000;
     let state: TelemetryState = 'OFFLINE';
+    let transportHealth: 'HEALTHY' | 'DEGRADED' | 'ERROR' | 'UNKNOWN' = 'UNKNOWN';
 
     if (!publisherConnected || !isReady) {
-      // Disconnected publisher or unready path clears baseline
+      // Disconnected publisher or unready path clears baseline & history
       this.clearByteSample(pathName);
-      measuredBitrateKbps = null;
+      instantBitrateKbps = null;
+      smoothedBitrateKbps = null;
+      averageBitrateKbps60s = null;
+      peakBitrateKbps60s = null;
       state = 'OFFLINE';
+      transportHealth = 'UNKNOWN';
 
       this.pathDiagnostics.set(pathName, {
         currentBytes: inboundBytes,
@@ -333,6 +350,7 @@ export class MediaMtxTelemetryCollector {
         elapsedMs: null,
         bitrateBps: null,
         bitrateKbps: null,
+        smoothedBitrateKbps: null,
         selectedMetricSource,
         sampledAt: new Date(nowMs).toISOString()
       });
@@ -347,8 +365,12 @@ export class MediaMtxTelemetryCollector {
           sampledAtMonotonicMs: currentMonotonicMs,
           metricSource: selectedMetricSource
         });
-        measuredBitrateKbps = null;
+        instantBitrateKbps = null;
+        smoothedBitrateKbps = null;
+        averageBitrateKbps60s = null;
+        peakBitrateKbps60s = null;
         state = 'WARMING_UP';
+        transportHealth = (inboundFramesInError ?? 0) > 0 ? 'DEGRADED' : 'HEALTHY';
 
         this.pathDiagnostics.set(pathName, {
           currentBytes,
@@ -357,6 +379,7 @@ export class MediaMtxTelemetryCollector {
           elapsedMs: null,
           bitrateBps: null,
           bitrateKbps: null,
+          smoothedBitrateKbps: null,
           selectedMetricSource,
           sampledAt: new Date(nowMs).toISOString()
         });
@@ -372,8 +395,12 @@ export class MediaMtxTelemetryCollector {
             sampledAtMonotonicMs: currentMonotonicMs,
             metricSource: selectedMetricSource
           });
-          measuredBitrateKbps = null;
+          instantBitrateKbps = null;
+          smoothedBitrateKbps = null;
+          averageBitrateKbps60s = null;
+          peakBitrateKbps60s = null;
           state = 'WARMING_UP';
+          transportHealth = (inboundFramesInError ?? 0) > 0 ? 'DEGRADED' : 'HEALTHY';
 
           this.pathDiagnostics.set(pathName, {
             currentBytes,
@@ -382,13 +409,14 @@ export class MediaMtxTelemetryCollector {
             elapsedMs,
             bitrateBps: null,
             bitrateKbps: null,
+            smoothedBitrateKbps: null,
             selectedMetricSource,
             sampledAt: new Date(nowMs).toISOString()
           });
         } else {
-          // Valid delta over positive time -> calculate exact bitrate
+          // Valid delta over positive time -> calculate exact instant bitrate
           const bitrateBps = (deltaBytes * 8) / elapsedSeconds;
-          measuredBitrateKbps = Math.round(bitrateBps / 1000);
+          instantBitrateKbps = Math.round(bitrateBps / 1000);
           this.byteSamples.set(pathName, {
             bytes: currentBytes,
             sampledAtMonotonicMs: currentMonotonicMs,
@@ -396,17 +424,109 @@ export class MediaMtxTelemetryCollector {
           });
           state = 'LIVE';
 
+          // Transport health: error frames indicate degradation/error
+          if ((inboundFramesInError ?? 0) > 10) {
+            transportHealth = 'ERROR';
+          } else if ((inboundFramesInError ?? 0) > 0) {
+            transportHealth = 'DEGRADED';
+          } else {
+            transportHealth = 'HEALTHY';
+          }
+
+          // EMA Smoothing (alpha = 0.25) & 60s rolling window
+          let history = this.pathBitrateHistory.get(pathName);
+          if (!history) {
+            history = { smoothedBitrate: null, samples: [] };
+            this.pathBitrateHistory.set(pathName, history);
+          }
+
+          if (history.smoothedBitrate === null) {
+            smoothedBitrateKbps = instantBitrateKbps;
+          } else {
+            // EMA formula: smoothed = Math.round(0.25 * instant + 0.75 * prevSmoothed)
+            smoothedBitrateKbps = Math.round(0.25 * instantBitrateKbps + 0.75 * history.smoothedBitrate);
+          }
+          history.smoothedBitrate = smoothedBitrateKbps;
+
+          // Push to 60s window
+          history.samples.push({ kbps: instantBitrateKbps, timestampMs: nowMs });
+          // Evict older than 60 seconds
+          const cutoffMs = nowMs - 60000;
+          history.samples = history.samples.filter(s => s.timestampMs >= cutoffMs);
+
+          if (history.samples.length > 0) {
+            const sum = history.samples.reduce((acc, s) => acc + s.kbps, 0);
+            averageBitrateKbps60s = Math.round(sum / history.samples.length);
+            peakBitrateKbps60s = Math.max(...history.samples.map(s => s.kbps));
+          } else {
+            averageBitrateKbps60s = instantBitrateKbps;
+            peakBitrateKbps60s = instantBitrateKbps;
+          }
+
           this.pathDiagnostics.set(pathName, {
             currentBytes,
             previousBytes: prev.bytes,
             deltaBytes,
             elapsedMs,
             bitrateBps,
-            bitrateKbps: measuredBitrateKbps,
+            bitrateKbps: instantBitrateKbps,
+            smoothedBitrateKbps,
             selectedMetricSource,
             sampledAt: new Date(nowMs).toISOString()
           });
         }
+      }
+    }
+
+    // 5. Compliance Evaluation
+    const complianceMode = (process.env.BITRATE_COMPLIANCE_MODE || 'informational').toLowerCase() as 'disabled' | 'informational' | 'strict';
+    const targetLowPct = parseFloat(process.env.BITRATE_TARGET_LOW_PERCENT || '80');
+    const targetHighPct = parseFloat(process.env.BITRATE_TARGET_HIGH_PERCENT || '120');
+
+    const primaryBitrateForCompliance = smoothedBitrateKbps ?? instantBitrateKbps;
+
+    let compliance: BitrateCompliance;
+    if (!publisherConnected || state !== 'LIVE' || primaryBitrateForCompliance === null) {
+      compliance = {
+        mode: complianceMode,
+        status: 'NOT_EVALUATED',
+        label: 'Not evaluated'
+      };
+    } else if (complianceMode === 'disabled') {
+      compliance = {
+        mode: 'disabled',
+        status: 'NOT_EVALUATED',
+        label: 'Disabled'
+      };
+    } else if (complianceMode === 'informational') {
+      compliance = {
+        mode: 'informational',
+        status: 'NOT_EVALUATED',
+        label: 'Informational only'
+      };
+    } else {
+      // strict mode
+      const lowThresh = configuredTargetBitrateKbps * (targetLowPct / 100);
+      const highThresh = configuredTargetBitrateKbps * (targetHighPct / 100);
+
+      if (primaryBitrateForCompliance < lowThresh) {
+        compliance = {
+          mode: 'strict',
+          status: 'BELOW_TARGET_RANGE',
+          label: 'Below target range'
+        };
+      } else if (primaryBitrateForCompliance > highThresh) {
+        compliance = {
+          mode: 'strict',
+          status: 'ABOVE_TARGET_RANGE',
+          label: 'Above target range'
+        };
+      } else {
+        compliance = {
+          mode: 'strict',
+          status: 'WITHIN_TARGET_RANGE',
+          label: 'Within target range'
+        };
       }
     }
 
@@ -423,6 +543,7 @@ export class MediaMtxTelemetryCollector {
         available: isAvailable,
         online: isOnline,
         state,
+        transportHealth,
         readyTime: rawPath.readyTime || null,
         onlineTime: rawPath.onlineTime || null
       },
@@ -454,13 +575,18 @@ export class MediaMtxTelemetryCollector {
         }
       },
       telemetry: {
-        measuredBitrateKbps,
-        configuredTargetBitrateKbps: 6000,
+        measuredBitrateKbps: smoothedBitrateKbps ?? instantBitrateKbps,
+        instantBitrateKbps,
+        smoothedBitrateKbps,
+        averageBitrateKbps60s,
+        peakBitrateKbps60s,
+        configuredTargetBitrateKbps,
         inboundBytes,
         outboundBytes,
         inboundFramesInError,
         sampledAt: isoSampledAt,
-        freshness: 'live'
+        freshness: 'live',
+        compliance
       }
     };
   }

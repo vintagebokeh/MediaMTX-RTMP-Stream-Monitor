@@ -102,6 +102,8 @@ export default function App() {
     Array<{
       time: string;
       bitrateKbps: number | null;
+      instantBitrateKbps?: number | null;
+      averageBitrateKbps60s?: number | null;
       targetKbps: number | null;
       latencyMs: number | null;
       inboundErrors: number;
@@ -228,8 +230,10 @@ export default function App() {
               ...prev,
               {
                 time: timeLabel,
-                bitrateKbps: measuredBitrate,
-                targetKbps: targetPath.metrics.configuredTargetBitrateKbps ?? targetPath.metrics.targetBitrateKbps ?? 6000,
+                bitrateKbps: snap ? (snap.telemetry.smoothedBitrateKbps ?? snap.telemetry.measuredBitrateKbps) : measuredBitrate,
+                instantBitrateKbps: snap ? (snap.telemetry.instantBitrateKbps ?? snap.telemetry.measuredBitrateKbps) : measuredBitrate,
+                averageBitrateKbps60s: snap ? (snap.telemetry.averageBitrateKbps60s ?? null) : null,
+                targetKbps: snap ? (snap.telemetry.configuredTargetBitrateKbps ?? 6000) : (targetPath.metrics.configuredTargetBitrateKbps ?? targetPath.metrics.targetBitrateKbps ?? 6000),
                 latencyMs: targetPath.metrics.measuredLatencyMs ?? targetPath.metrics.latencyMs,
                 inboundErrors: targetPath.metrics.inboundErrors,
                 discardedFrames: targetPath.metrics.discardedFrames

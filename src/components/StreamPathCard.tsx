@@ -95,7 +95,7 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
       };
     }
     return {
-      label: 'OPTIMAL (LIVE)',
+      label: 'LIVE',
       style: isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-800'
     };
   };

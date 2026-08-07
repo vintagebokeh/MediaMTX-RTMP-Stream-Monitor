@@ -15,6 +15,8 @@ import { ChartErrorBoundary } from './ChartErrorBoundary';
 interface ChartPoint {
   time: string;
   bitrateKbps: number | null;
+  instantBitrateKbps?: number | null;
+  averageBitrateKbps60s?: number | null;
   targetKbps: number | null;
   latencyMs: number | null;
   inboundErrors: number;
@@ -29,6 +31,8 @@ interface BitrateChartProps {
 export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme = 'light' }) => {
   const [metricTab, setMetricTab] = useState<'bitrate' | 'latency' | 'errors'>('bitrate');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
+  const [showInstantBitrate, setShowInstantBitrate] = useState<boolean>(false);
+  const [show60sAverage, setShow60sAverage] = useState<boolean>(false);
   const backdropRef = useRef<HTMLDivElement | null>(null);
 
   const isDark = theme === 'dark';
@@ -117,13 +121,38 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme 
             <Line
               type="monotone"
               dataKey="bitrateKbps"
-              name="Current Bitrate"
+              name="Smoothed Bitrate (EMA)"
               stroke="#10b981"
               strokeWidth={2}
               connectNulls={false}
               dot={false}
               isAnimationActive={false}
             />
+            {showInstantBitrate && (
+              <Line
+                type="monotone"
+                dataKey="instantBitrateKbps"
+                name="Instant Raw Bitrate"
+                stroke="#f59e0b"
+                strokeWidth={1.5}
+                strokeDasharray="2 2"
+                connectNulls={false}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
+            {show60sAverage && (
+              <Line
+                type="monotone"
+                dataKey="averageBitrateKbps60s"
+                name="60s Moving Average"
+                stroke="#3b82f6"
+                strokeWidth={1.5}
+                connectNulls={false}
+                dot={false}
+                isAnimationActive={false}
+              />
+            )}
           </LineChart>
         ) : metricTab === 'latency' ? (
           <LineChart data={safeHistory} margin={{ top: 10, right: 20, left: 0, bottom: 0 }}>
@@ -292,10 +321,10 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme 
         </ChartErrorBoundary>
 
         {/* Legend & Summary Notes */}
-        <div className={`flex flex-wrap items-center justify-between text-xs border-t pt-3 ${
+        <div className={`flex flex-wrap items-center justify-between text-xs border-t pt-3 gap-2 ${
           isDark ? 'border-slate-800 text-slate-400' : 'border-slate-200 text-slate-600'
         }`}>
-          <div className="flex items-center space-x-6">
+          <div className="flex flex-wrap items-center gap-4">
             <span className="flex items-center gap-2">
               <span className="w-3 h-0.5 bg-emerald-500 rounded-full" />
               Target Bitrate: <strong className="font-mono">6000 Kbps (6 Mbps)</strong>
@@ -304,6 +333,28 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme 
               <span className="w-3 h-0.5 bg-indigo-500 rounded-full" />
               Target Latency: <strong className="font-mono">~2000 ms (2.0s)</strong>
             </span>
+            {metricTab === 'bitrate' && (
+              <div className="flex items-center space-x-3 pl-2 border-l border-slate-700 font-mono text-[11px]">
+                <label className="flex items-center gap-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={showInstantBitrate}
+                    onChange={(e) => setShowInstantBitrate(e.target.checked)}
+                    className="rounded text-amber-500 focus:ring-amber-500"
+                  />
+                  <span className="text-amber-500 font-semibold">Raw Instant (Byte Delta)</span>
+                </label>
+                <label className="flex items-center gap-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={show60sAverage}
+                    onChange={(e) => setShow60sAverage(e.target.checked)}
+                    className="rounded text-blue-500 focus:ring-blue-500"
+                  />
+                  <span className="text-blue-500 font-semibold">60s Avg</span>
+                </label>
+              </div>
+            )}
           </div>
 
           <span className="font-mono text-[11px] opacity-75">

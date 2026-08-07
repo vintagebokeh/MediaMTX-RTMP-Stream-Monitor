@@ -513,11 +513,38 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
               Compliance Checklist
             </div>
             <div className="flex items-center justify-between text-slate-300">
-              <span>Target Bitrate (6.0 Mbps):</span>
-              <span className="font-mono text-emerald-400 font-bold">MATCHED</span>
+              <span>Bitrate Compliance:</span>
+              {(() => {
+                const comp = path.normalizedSnapshot?.telemetry.compliance || { mode: 'informational', status: 'NOT_EVALUATED', label: 'Informational only' };
+                if (comp.mode === 'informational') {
+                  return <span className="font-mono text-slate-400 font-bold">NOT EVALUATED (INFO)</span>;
+                }
+                switch (comp.status) {
+                  case 'WITHIN_TARGET_RANGE':
+                    return <span className="font-mono text-emerald-400 font-bold">WITHIN TARGET</span>;
+                  case 'BELOW_TARGET_RANGE':
+                    return <span className="font-mono text-amber-400 font-bold">BELOW TARGET</span>;
+                  case 'ABOVE_TARGET_RANGE':
+                    return <span className="font-mono text-rose-400 font-bold">ABOVE TARGET</span>;
+                  default:
+                    return <span className="font-mono text-slate-400 font-bold">{comp.status}</span>;
+                }
+              })()}
             </div>
             <div className="flex items-center justify-between text-slate-300">
-              <span>Configured Latency Target:</span>
+              <span>Transport Health:</span>
+              <span className={`font-mono font-bold ${
+                path.normalizedSnapshot?.stream.transportHealth === 'HEALTHY'
+                  ? 'text-emerald-400'
+                  : path.normalizedSnapshot?.stream.transportHealth === 'DEGRADED'
+                  ? 'text-amber-400'
+                  : 'text-slate-300'
+              }`}>
+                {path.normalizedSnapshot?.stream.transportHealth || 'HEALTHY'}
+              </span>
+            </div>
+            <div className="flex items-center justify-between text-slate-300">
+              <span>Configured Target Buffer:</span>
               <span className="font-mono text-slate-300 font-bold">
                 {((metrics.configuredLatencyTargetMs || metrics.latencyMs || 2000) / 1000).toFixed(2)}s (2000 ms)
               </span>
@@ -525,18 +552,20 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
             <div className="flex items-center justify-between text-slate-300">
               <span>Measured Latency:</span>
               <span className={`font-mono font-bold ${
-                metrics.measuredLatency?.valueMs ? 'text-emerald-400' : 'text-slate-400'
+                metrics.measuredLatency?.valueMs ? 'text-indigo-400' : 'text-slate-400'
               }`}>
                 {metrics.measuredLatency?.valueMs ? `${metrics.measuredLatency.valueMs} ms` : 'NOT MEASURED'}
               </span>
             </div>
             <div className="flex items-center justify-between text-slate-300">
               <span>Inbound Errors:</span>
-              <span className="font-mono text-emerald-400 font-bold">0</span>
+              <span className="font-mono text-emerald-400 font-bold">
+                {path.normalizedSnapshot?.telemetry.inboundFramesInError ?? metrics.inboundErrors}
+              </span>
             </div>
             <div className="flex items-center justify-between text-slate-300">
               <span>Discarded Frames:</span>
-              <span className="font-mono text-emerald-400 font-bold">0</span>
+              <span className="font-mono text-emerald-400 font-bold">{metrics.discardedFrames}</span>
             </div>
           </div>
 

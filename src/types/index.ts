@@ -18,6 +18,12 @@ export type TelemetryState =
   | "BACKEND_OFFLINE"
   | "MEDIAMTX_OFFLINE";
 
+export interface BitrateCompliance {
+  mode: 'disabled' | 'informational' | 'strict';
+  status: 'NOT_EVALUATED' | 'WITHIN_TARGET_RANGE' | 'BELOW_TARGET_RANGE' | 'ABOVE_TARGET_RANGE';
+  label: string;
+}
+
 export interface NormalizedStreamSnapshot {
   snapshotId?: string;
   collectorSequence?: number;
@@ -30,6 +36,7 @@ export interface NormalizedStreamSnapshot {
     available: boolean;
     online: boolean;
     state: TelemetryState;
+    transportHealth?: 'HEALTHY' | 'DEGRADED' | 'ERROR' | 'UNKNOWN';
     readyTime: string | null;
     onlineTime: string | null;
   };
@@ -70,12 +77,17 @@ export interface NormalizedStreamSnapshot {
 
   telemetry: {
     measuredBitrateKbps: Kbps | null;
+    instantBitrateKbps?: Kbps | null;
+    smoothedBitrateKbps?: Kbps | null;
+    averageBitrateKbps60s?: Kbps | null;
+    peakBitrateKbps60s?: Kbps | null;
     configuredTargetBitrateKbps?: Kbps | null;
     inboundBytes: Bytes | null;
     outboundBytes: Bytes | null;
     inboundFramesInError: number | null;
     sampledAt: string;
     freshness: "live" | "stale" | "unavailable";
+    compliance?: BitrateCompliance;
   };
 }
 

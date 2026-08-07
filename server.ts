@@ -31,6 +31,7 @@ function getMockNormalizedSnapshot(pathName = 'live/test'): NormalizedStreamSnap
       available: true,
       online: true,
       state: 'LIVE',
+      transportHealth: 'HEALTHY',
       readyTime: new Date(Date.now() - 3600000).toISOString(),
       onlineTime: new Date(Date.now() - 3600000).toISOString()
     },
@@ -68,17 +69,29 @@ function getMockNormalizedSnapshot(pathName = 'live/test'): NormalizedStreamSnap
     },
     telemetry: {
       measuredBitrateKbps: 6012,
+      instantBitrateKbps: 6012,
+      smoothedBitrateKbps: 6012,
+      averageBitrateKbps60s: 6010,
+      peakBitrateKbps60s: 6050,
+      configuredTargetBitrateKbps: 6000,
       inboundBytes: 2700000000,
       outboundBytes: 1350000000,
       inboundFramesInError: 0,
       sampledAt: new Date().toISOString(),
-      freshness: 'live'
+      freshness: 'live',
+      compliance: {
+        mode: 'informational',
+        status: 'NOT_EVALUATED',
+        label: 'Informational only'
+      }
     }
   };
 }
 
 function mapSnapshotToStreamPath(snap: NormalizedStreamSnapshot): StreamPath {
   const isPublisherConnected = snap.publisher.connected;
+  const targetKbps = snap.telemetry.configuredTargetBitrateKbps ?? 6000;
+  const primaryBitrate = snap.telemetry.smoothedBitrateKbps ?? snap.telemetry.measuredBitrateKbps;
 
   const publisherObj = isPublisherConnected ? {
     id: snap.publisher.id || 'pub-unknown',
@@ -91,10 +104,10 @@ function mapSnapshotToStreamPath(snap: NormalizedStreamSnapshot): StreamPath {
     audioCodec: snap.media.audio.codec || '',
     audioSampleRate: snap.media.audio.sampleRate,
     audioChannels: snap.media.audio.channels ? (snap.media.audio.channels === 2 ? 'stereo' : `${snap.media.audio.channels}ch`) : '',
-    targetBitrateKbps: null,
-    configuredTargetBitrateKbps: 6000,
-    currentBitrateKbps: snap.telemetry.measuredBitrateKbps,
-    measuredBitrateKbps: snap.telemetry.measuredBitrateKbps,
+    targetBitrateKbps: targetKbps,
+    configuredTargetBitrateKbps: targetKbps,
+    currentBitrateKbps: primaryBitrate,
+    measuredBitrateKbps: primaryBitrate,
     connectedAt: snap.stream.onlineTime || snap.telemetry.sampledAt,
     bytesReceived: snap.telemetry.inboundBytes || 0
   } : null;
@@ -122,10 +135,10 @@ function mapSnapshotToStreamPath(snap: NormalizedStreamSnapshot): StreamPath {
     telemetryFreshness: snap.telemetry.freshness,
     normalizedSnapshot: snap,
     metrics: {
-      currentBitrateKbps: snap.telemetry.measuredBitrateKbps,
-      measuredBitrateKbps: snap.telemetry.measuredBitrateKbps,
-      targetBitrateKbps: null,
-      configuredTargetBitrateKbps: 6000,
+      currentBitrateKbps: primaryBitrate,
+      measuredBitrateKbps: primaryBitrate,
+      targetBitrateKbps: targetKbps,
+      configuredTargetBitrateKbps: targetKbps,
       latencyMs: isPublisherConnected ? 2000 : null,
       configuredLatencyTargetMs: 2000,
       measuredLatencyMs: getLatestLatencyForPath(snap.path).valueMs,
