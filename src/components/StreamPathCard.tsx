@@ -53,6 +53,19 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
   const configuredTargetMs = metrics.configuredLatencyTargetMs || 2000;
   const configuredTargetSec = (configuredTargetMs / 1000).toFixed(2);
 
+  const videoCodec = snap?.media.video.codec || publisher?.videoCodec || (isPublisherConnected ? 'H264' : 'N/A');
+  const videoResolution = (snap?.media.video.width && snap?.media.video.height)
+    ? `${snap.media.video.width}x${snap.media.video.height}`
+    : (publisher?.videoResolution || 'N/A');
+  const videoFps = publisher?.videoFps ?? null;
+  const audioCodec = snap?.media.audio.codec || publisher?.audioCodec || (isPublisherConnected ? 'MPEG-4 Audio' : 'N/A');
+  const audioSampleRate = snap?.media.audio.sampleRate
+    ? `${snap.media.audio.sampleRate / 1000} kHz`
+    : (publisher?.audioSampleRate ? `${publisher.audioSampleRate / 1000} kHz` : 'N/A');
+  const audioChannels = snap?.media.audio.channels
+    ? (snap.media.audio.channels === 2 ? 'Stereo' : `${snap.media.audio.channels} ch`)
+    : (publisher?.audioChannels || 'N/A');
+
   const activeSample = path.metrics.measuredLatency || latestLatencySample;
   const measuredMs = activeSample?.valueMs ?? metrics.measuredLatencyMs ?? null;
 
@@ -383,15 +396,15 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
               <Video className="w-3.5 h-3.5 text-sky-500" />
               <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Video:</span>
               <span className="font-mono font-bold">
-                {publisher?.videoCodec || 'H.264'}
+                {videoCodec}
               </span>
               <span className="opacity-40">|</span>
               <span className="font-mono font-semibold text-sky-600 dark:text-sky-300">
-                {publisher?.videoResolution || '1920x1080'}
+                {videoResolution}
               </span>
               <span className="opacity-40">@</span>
               <span className="font-mono font-semibold">
-                {publisher?.videoFps || 60} FPS
+                {videoFps !== null ? `${videoFps} FPS` : '--'}
               </span>
             </div>
 
@@ -402,15 +415,15 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
               <Volume2 className="w-3.5 h-3.5 text-purple-500" />
               <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Audio:</span>
               <span className="font-mono font-bold">
-                {publisher?.audioCodec || 'AAC'}
+                {audioCodec}
               </span>
               <span className="opacity-40">|</span>
               <span className="font-mono font-semibold text-purple-600 dark:text-purple-300">
-                {(publisher?.audioSampleRate ? publisher.audioSampleRate / 1000 : 48)} kHz
+                {audioSampleRate}
               </span>
               <span className="opacity-40">|</span>
               <span className="font-mono font-semibold uppercase">
-                {publisher?.audioChannels || 'stereo'}
+                {audioChannels}
               </span>
             </div>
           </div>

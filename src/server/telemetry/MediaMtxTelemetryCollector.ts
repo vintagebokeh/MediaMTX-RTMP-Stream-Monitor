@@ -2,7 +2,19 @@ import { NormalizedStreamSnapshot, TelemetryState } from '../../types';
 
 export interface ByteSample {
   bytes: number;
-  sampledAtMs: number;
+  sampledAtMonotonicMs: number;
+  metricSource: 'prometheus' | 'control-api' | 'none';
+}
+
+export interface BitrateDiagnostics {
+  currentBytes: number | null;
+  previousBytes: number | null;
+  deltaBytes: number | null;
+  elapsedMs: number | null;
+  bitrateBps: number | null;
+  bitrateKbps: number | null;
+  selectedMetricSource: 'prometheus' | 'control-api' | 'none';
+  sampledAt: string;
 }
 
 export interface MediaMtxCollectorConfig {
@@ -12,6 +24,8 @@ export interface MediaMtxCollectorConfig {
 
 export class MediaMtxTelemetryCollector {
   private byteSamples = new Map<string, ByteSample>();
+  private pathDiagnostics = new Map<string, BitrateDiagnostics>();
+  private collectorSequence = 0;
   private controlApiUrl: string;
   private metricsUrl: string;
 
@@ -26,6 +40,11 @@ export class MediaMtxTelemetryCollector {
 
   public clearByteSample(pathName: string): void {
     this.byteSamples.delete(pathName);
+    this.pathDiagnostics.delete(pathName);
+  }
+
+  public getCollectorSequence(): number {
+    return this.collectorSequence;
   }
 
   /**
@@ -106,7 +125,8 @@ export class MediaMtxTelemetryCollector {
     } | any[],
     webRtcSessionsOrNowMs?: any[] | number | string,
     metricsDataOrNowMs?: ReturnType<typeof this.parseMetrics> | number | string,
-    sampledAtTime?: number | string
+    sampledAtTime?: number | string,
+    forcedMonotonicMs?: number
   ): NormalizedStreamSnapshot {
     let rtmpConns: any[] = [];
     let webRtcSessions: any[] = [];
@@ -126,6 +146,12 @@ export class MediaMtxTelemetryCollector {
       const rawTime = (webRtcSessionsOrNowMs as number | string) ?? Date.now();
       nowMs = typeof rawTime === 'number' ? rawTime : (Date.parse(String(rawTime)) || Date.now());
     }
+
+    const hasExplicitTimestamp = sampledAtTime !== undefined || (typeof metricsDataOrNowMs === 'string' || typeof metricsDataOrNowMs === 'number') || (typeof webRtcSessionsOrNowMs === 'string' || typeof webRtcSessionsOrNowMs === 'number');
+
+    const currentMonotonicMs = forcedMonotonicMs !== undefined
+      ? forcedMonotonicMs
+      : (hasExplicitTimestamp ? nowMs : (typeof performance !== 'undefined' ? performance.now() : nowMs));
 
     const pathName = rawPath.name || 'unknown';
     const isReady = Boolean(rawPath.ready);
@@ -157,7 +183,6 @@ export class MediaMtxTelemetryCollector {
 
       // Find remote address and verify state from API lists or metrics
       if (pubId) {
-        // Try RTMP conns list
         const rtmpMatch = rtmpConns.find(
           c => c.id === pubId || c.id === rawPath.source.id
         );
@@ -168,7 +193,6 @@ export class MediaMtxTelemetryCollector {
           }
         }
 
-        // Try Metrics RTMP conns
         if (!publisherConnected && metricsData) {
           const metricRtmp = metricsData.rtmpConns.find(c => c.id === pubId);
           if (metricRtmp) {
@@ -179,7 +203,6 @@ export class MediaMtxTelemetryCollector {
           }
         }
 
-        // Default to connected if path has a valid source ID and ready/online, unless state says otherwise
         if (!publisherConnected && pubSourceType && pubId && isReady) {
           publisherConnected = true;
         }
@@ -267,20 +290,29 @@ export class MediaMtxTelemetryCollector {
       audioCodec = 'MPEG-4 Audio';
     }
 
-    // 4. Inbound / Outbound Bytes & Bitrate Calculation
-    let inboundBytes: number | null =
-      typeof rawPath.inboundBytes === 'number' ? rawPath.inboundBytes : null;
+    // 4. Inbound / Outbound Bytes & Bitrate Calculation Source Selection
+    let selectedMetricSource: 'prometheus' | 'control-api' | 'none' = 'none';
+    let inboundBytes: number | null = null;
+
+    if (metricsData?.pathInboundBytes.has(pathName)) {
+      inboundBytes = metricsData.pathInboundBytes.get(pathName)!;
+      selectedMetricSource = 'prometheus';
+    } else if (typeof rawPath.inboundBytes === 'number') {
+      inboundBytes = rawPath.inboundBytes;
+      selectedMetricSource = 'control-api';
+    } else if (typeof rawPath.bytesReceived === 'number' && rawPath.bytesReceived > 0) {
+      inboundBytes = rawPath.bytesReceived;
+      selectedMetricSource = 'control-api';
+    }
+
     let outboundBytes: number | null =
       typeof rawPath.outboundBytes === 'number' ? rawPath.outboundBytes : null;
-    let inboundFramesInError: number | null =
-      typeof rawPath.inboundFramesInError === 'number' ? rawPath.inboundFramesInError : null;
-
-    if (inboundBytes === null && metricsData?.pathInboundBytes.has(pathName)) {
-      inboundBytes = metricsData.pathInboundBytes.get(pathName)!;
-    }
     if (outboundBytes === null && metricsData?.pathOutboundBytes.has(pathName)) {
       outboundBytes = metricsData.pathOutboundBytes.get(pathName)!;
     }
+
+    let inboundFramesInError: number | null =
+      typeof rawPath.inboundFramesInError === 'number' ? rawPath.inboundFramesInError : null;
     if (inboundFramesInError === null && metricsData?.pathInboundFramesInError.has(pathName)) {
       inboundFramesInError = metricsData.pathInboundFramesInError.get(pathName)!;
     }
@@ -289,38 +321,101 @@ export class MediaMtxTelemetryCollector {
     let state: TelemetryState = 'OFFLINE';
 
     if (!publisherConnected || !isReady) {
-      // Clear baseline when publisher is disconnected or path not ready
-      this.byteSamples.delete(pathName);
+      // Disconnected publisher or unready path clears baseline
+      this.clearByteSample(pathName);
       measuredBitrateKbps = null;
       state = 'OFFLINE';
+
+      this.pathDiagnostics.set(pathName, {
+        currentBytes: inboundBytes,
+        previousBytes: null,
+        deltaBytes: null,
+        elapsedMs: null,
+        bitrateBps: null,
+        bitrateKbps: null,
+        selectedMetricSource,
+        sampledAt: new Date(nowMs).toISOString()
+      });
     } else {
       const currentBytes = inboundBytes ?? 0;
       const prev = this.byteSamples.get(pathName);
 
       if (!prev) {
-        // First valid sample
-        this.byteSamples.set(pathName, { bytes: currentBytes, sampledAtMs: nowMs });
+        // First sample baseline establishment -> state is WARMING_UP
+        this.byteSamples.set(pathName, {
+          bytes: currentBytes,
+          sampledAtMonotonicMs: currentMonotonicMs,
+          metricSource: selectedMetricSource
+        });
         measuredBitrateKbps = null;
         state = 'WARMING_UP';
-      } else {
-        const elapsedSeconds = (nowMs - prev.sampledAtMs) / 1000;
-        const bytesDelta = currentBytes - prev.bytes;
 
-        if (bytesDelta < 0 || elapsedSeconds <= 0) {
-          // Negative delta or counter reset or zero time diff
-          this.byteSamples.set(pathName, { bytes: currentBytes, sampledAtMs: nowMs });
+        this.pathDiagnostics.set(pathName, {
+          currentBytes,
+          previousBytes: null,
+          deltaBytes: null,
+          elapsedMs: null,
+          bitrateBps: null,
+          bitrateKbps: null,
+          selectedMetricSource,
+          sampledAt: new Date(nowMs).toISOString()
+        });
+      } else {
+        const elapsedMs = currentMonotonicMs - prev.sampledAtMonotonicMs;
+        const elapsedSeconds = elapsedMs / 1000;
+        const deltaBytes = currentBytes - prev.bytes;
+
+        if (deltaBytes < 0 || elapsedSeconds <= 0) {
+          // Counter reset or negative delta or non-positive elapsed time -> reset baseline
+          this.byteSamples.set(pathName, {
+            bytes: currentBytes,
+            sampledAtMonotonicMs: currentMonotonicMs,
+            metricSource: selectedMetricSource
+          });
           measuredBitrateKbps = null;
           state = 'WARMING_UP';
+
+          this.pathDiagnostics.set(pathName, {
+            currentBytes,
+            previousBytes: prev.bytes,
+            deltaBytes,
+            elapsedMs,
+            bitrateBps: null,
+            bitrateKbps: null,
+            selectedMetricSource,
+            sampledAt: new Date(nowMs).toISOString()
+          });
         } else {
-          // Second and subsequent valid sample
-          measuredBitrateKbps = Math.round(((bytesDelta * 8) / elapsedSeconds) / 1000);
-          this.byteSamples.set(pathName, { bytes: currentBytes, sampledAtMs: nowMs });
+          // Valid delta over positive time -> calculate exact bitrate
+          const bitrateBps = (deltaBytes * 8) / elapsedSeconds;
+          measuredBitrateKbps = Math.round(bitrateBps / 1000);
+          this.byteSamples.set(pathName, {
+            bytes: currentBytes,
+            sampledAtMonotonicMs: currentMonotonicMs,
+            metricSource: selectedMetricSource
+          });
           state = 'LIVE';
+
+          this.pathDiagnostics.set(pathName, {
+            currentBytes,
+            previousBytes: prev.bytes,
+            deltaBytes,
+            elapsedMs,
+            bitrateBps,
+            bitrateKbps: measuredBitrateKbps,
+            selectedMetricSource,
+            sampledAt: new Date(nowMs).toISOString()
+          });
         }
       }
     }
 
+    const isoSampledAt = new Date(nowMs).toISOString();
+
     return {
+      snapshotId: `snap_${this.collectorSequence}_${pathName}_${nowMs}`,
+      collectorSequence: this.collectorSequence,
+      sourceRevision: 1,
       path: pathName,
       stream: {
         configured: true,
@@ -334,6 +429,7 @@ export class MediaMtxTelemetryCollector {
       publisher: {
         connected: publisherConnected,
         type: pubType,
+        protocol: pubType ? pubType.toUpperCase() : null,
         sourceType: pubSourceType,
         id: pubId,
         remoteAddress: pubRemoteAddr
@@ -359,10 +455,11 @@ export class MediaMtxTelemetryCollector {
       },
       telemetry: {
         measuredBitrateKbps,
+        configuredTargetBitrateKbps: 6000,
         inboundBytes,
         outboundBytes,
         inboundFramesInError,
-        sampledAt: new Date(nowMs).toISOString(),
+        sampledAt: isoSampledAt,
         freshness: 'live'
       }
     };
@@ -376,6 +473,7 @@ export class MediaMtxTelemetryCollector {
     sampledAt: string;
     mediaMtxReachable: boolean;
   }> {
+    this.collectorSequence++;
     const sampledAt = new Date().toISOString();
     const nowMs = Date.now();
 
@@ -463,12 +561,25 @@ export class MediaMtxTelemetryCollector {
     rawReaderCount: number,
     normalized: NormalizedStreamSnapshot | null
   ) {
+    const diag = this.pathDiagnostics.get(pathName) || {
+      currentBytes: normalized?.telemetry.inboundBytes ?? null,
+      previousBytes: null,
+      deltaBytes: null,
+      elapsedMs: null,
+      bitrateBps: null,
+      bitrateKbps: normalized?.telemetry.measuredBitrateKbps ?? null,
+      selectedMetricSource: 'none',
+      sampledAt: new Date().toISOString()
+    };
+
     return {
       rawPathFound,
       rawPublisherFound,
       rawReaderCount,
       byteBaselineReady: this.byteSamples.has(pathName),
+      calculationDiagnostics: diag,
       normalized,
+      collectorSequence: this.collectorSequence,
       sampledAt: new Date().toISOString()
     };
   }

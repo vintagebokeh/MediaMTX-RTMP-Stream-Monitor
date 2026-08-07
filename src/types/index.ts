@@ -1,5 +1,9 @@
 export type AppEnv = 'local' | 'lan' | 'remote';
 
+export type Kbps = number;
+export type Bytes = number;
+export type Milliseconds = number;
+
 export type RuntimeDataMode = 'real' | 'mock';
 
 export function resolveRuntimeDataMode(flagRawValue?: string): RuntimeDataMode {
@@ -15,6 +19,9 @@ export type TelemetryState =
   | "MEDIAMTX_OFFLINE";
 
 export interface NormalizedStreamSnapshot {
+  snapshotId?: string;
+  collectorSequence?: number;
+  sourceRevision?: string | number;
   path: string;
 
   stream: {
@@ -30,6 +37,7 @@ export interface NormalizedStreamSnapshot {
   publisher: {
     connected: boolean;
     type: "RTMP" | "RTSP" | "SRT" | "WHIP" | "UNKNOWN" | null;
+    protocol?: string | null;
     sourceType: string | null;
     id: string | null;
     remoteAddress: string | null;
@@ -61,9 +69,10 @@ export interface NormalizedStreamSnapshot {
   };
 
   telemetry: {
-    measuredBitrateKbps: number | null;
-    inboundBytes: number | null;
-    outboundBytes: number | null;
+    measuredBitrateKbps: Kbps | null;
+    configuredTargetBitrateKbps?: Kbps | null;
+    inboundBytes: Bytes | null;
+    outboundBytes: Bytes | null;
     inboundFramesInError: number | null;
     sampledAt: string;
     freshness: "live" | "stale" | "unavailable";

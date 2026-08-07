@@ -250,17 +250,24 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
         ctx.font = 'bold 13px sans-serif';
         ctx.fillText(`PATH: ${currentPath.name}`, 44, 38);
 
+        const snap = currentPath.normalizedSnapshot;
+        const resLabel = (snap?.media.video.width && snap?.media.video.height)
+          ? `${snap.media.video.width}x${snap.media.video.height}`
+          : (currentPublisher?.videoResolution || 'N/A');
+        const codecLabel = snap?.media.video.codec || currentPublisher?.videoCodec || 'H264';
+        const fpsLabel = currentPublisher?.videoFps ? `${currentPublisher.videoFps} FPS` : '--';
+
         ctx.fillStyle = '#94a3b8';
         ctx.font = '11px monospace';
-        ctx.fillText(`Resolution: ${currentPublisher?.videoResolution || '1920x1080'}`, 32, 58);
-        ctx.fillText(`Video: ${currentPublisher?.videoCodec || 'H.264'} @ ${currentPublisher?.videoFps || 60} FPS`, 32, 74);
+        ctx.fillText(`Resolution: ${resLabel}`, 32, 58);
+        ctx.fillText(`Video: ${codecLabel} @ ${fpsLabel}`, 32, 74);
         ctx.fillText(`Bitrate: ${(currentMetrics.currentBitrateKbps / 1000).toFixed(2)} Mbps (Target 6.00)`, 32, 90);
         ctx.fillText(`Timecode: ${new Date().toISOString().substring(11, 21)}`, 32, 106);
 
         // Watermark Right
         ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
         ctx.font = 'bold 16px sans-serif';
-        ctx.fillText('1920x1080 60fps', w - 160, 36);
+        ctx.fillText(`${resLabel} ${fpsLabel}`, w - 180, 36);
 
         // Direct DOM update for VU meters to avoid 60 FPS React state re-renders
         const l = Math.min(98, Math.max(10, Math.floor(75 + Math.sin(frameCount / 10) * 15 + Math.random() * 5)));
@@ -429,7 +436,7 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
                 Audio Telemetry
               </span>
               <span className="text-[10px] font-mono text-purple-300 bg-purple-500/20 px-1.5 py-0.5 rounded font-bold">
-                AAC 48kHz
+                {path.normalizedSnapshot?.media.audio.codec || publisher?.audioCodec || 'MPEG-4 Audio'} {path.normalizedSnapshot?.media.audio.sampleRate ? `${path.normalizedSnapshot.media.audio.sampleRate / 1000}kHz` : '48kHz'}
               </span>
             </div>
 
@@ -438,15 +445,15 @@ export const LiveStreamInspector: React.FC<LiveStreamInspectorProps> = ({
               <div className="space-y-2 text-xs font-mono">
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Audio Codec:</span>
-                  <span className="text-slate-200 font-bold">AAC</span>
+                  <span className="text-slate-200 font-bold">{path.normalizedSnapshot?.media.audio.codec || publisher?.audioCodec || 'MPEG-4 Audio'}</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Sample Rate:</span>
-                  <span className="text-slate-200 font-bold">48 kHz</span>
+                  <span className="text-slate-200 font-bold">{path.normalizedSnapshot?.media.audio.sampleRate ? `${path.normalizedSnapshot.media.audio.sampleRate / 1000} kHz` : (publisher?.audioSampleRate ? `${publisher.audioSampleRate / 1000} kHz` : 'N/A')}</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Channels:</span>
-                  <span className="text-slate-200 font-bold">Stereo</span>
+                  <span className="text-slate-200 font-bold">{path.normalizedSnapshot?.media.audio.channels ? (path.normalizedSnapshot.media.audio.channels === 2 ? 'Stereo' : `${path.normalizedSnapshot.media.audio.channels} ch`) : (publisher?.audioChannels || 'N/A')}</span>
                 </div>
                 <div className="flex justify-between items-center py-1 border-b border-slate-800/60">
                   <span className="text-slate-400">Audio Track Detected:</span>

@@ -35,6 +35,10 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Sequence & Duplicate tracking for debug assertions
+  const lastSequenceMapRef = useRef<Map<string, number>>(new Map());
+  const processedSnapIdsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
     return () => {
       if (refreshTimerRef.current) {
@@ -167,6 +171,47 @@ export default function App() {
 
         setPaths(snapshot.paths);
         setHostMetrics(snapshot.host);
+
+        // Debug Consistency Assertions (Step 13)
+        const isDebug = process.env.NODE_ENV !== 'production' || (typeof window !== 'undefined' && Boolean((window as any).TELEMETRY_DEBUG));
+        if (isDebug) {
+          snapshot.paths.forEach((p) => {
+            const snap = p.normalizedSnapshot;
+            if (snap) {
+              if (snap.publisher.connected && snap.stream.state === 'OFFLINE') {
+                console.warn(`[TELEMETRY_DEBUG Warning] Path '${snap.path}' publisher connected=true but stream state is OFFLINE`);
+              }
+
+              if (snap.readers.count !== snap.readers.items.length) {
+                console.warn(`[TELEMETRY_DEBUG Warning] Path '${snap.path}' reader count (${snap.readers.count}) differs from readers array length (${snap.readers.items.length})`);
+              }
+
+              if (snap.collectorSequence !== undefined) {
+                const prevSeq = lastSequenceMapRef.current.get(snap.path);
+                if (prevSeq !== undefined && snap.collectorSequence < prevSeq) {
+                  console.warn(`[TELEMETRY_DEBUG Warning] Path '${snap.path}' collectorSequence moved backward from ${prevSeq} to ${snap.collectorSequence}`);
+                }
+                lastSequenceMapRef.current.set(snap.path, snap.collectorSequence);
+              }
+
+              if (snap.snapshotId) {
+                if (processedSnapIdsRef.current.has(snap.snapshotId)) {
+                  console.warn(`[TELEMETRY_DEBUG Warning] Path '${snap.path}' duplicate snapshot ID processed: ${snap.snapshotId}`);
+                } else {
+                  processedSnapIdsRef.current.add(snap.snapshotId);
+                  if (processedSnapIdsRef.current.size > 200) {
+                    const firstItem = processedSnapIdsRef.current.values().next().value;
+                    if (firstItem) processedSnapIdsRef.current.delete(firstItem);
+                  }
+                }
+              }
+
+              if (p.metrics.measuredBitrateKbps !== snap.telemetry.measuredBitrateKbps) {
+                console.warn(`[TELEMETRY_DEBUG Warning] Path '${snap.path}' path.metrics.measuredBitrateKbps (${p.metrics.measuredBitrateKbps}) differs from snapshot (${snap.telemetry.measuredBitrateKbps})`);
+              }
+            }
+          });
+        }
 
         const targetPath = snapshot.paths.find((item) => item.name === selectedPathName) || snapshot.paths[0];
 
