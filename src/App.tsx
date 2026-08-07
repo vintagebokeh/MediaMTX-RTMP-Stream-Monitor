@@ -219,7 +219,8 @@ export default function App() {
 
         let currentSampleCount = 0;
         if (targetPath) {
-          const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString();
+          const snapTs = typeof snapshot.timestamp === 'number' ? snapshot.timestamp : new Date(snapshot.timestamp).getTime();
+          const timeLabel = new Date(snapTs).toLocaleTimeString();
           const snap = targetPath.normalizedSnapshot;
           const measuredBitrate = snap
             ? snap.telemetry.measuredBitrateKbps
@@ -230,6 +231,7 @@ export default function App() {
               ...prev,
               {
                 time: timeLabel,
+                timestampMs: snapTs,
                 bitrateKbps: snap ? (snap.telemetry.smoothedBitrateKbps ?? snap.telemetry.measuredBitrateKbps) : measuredBitrate,
                 instantBitrateKbps: snap ? (snap.telemetry.instantBitrateKbps ?? snap.telemetry.measuredBitrateKbps) : measuredBitrate,
                 averageBitrateKbps60s: snap ? (snap.telemetry.averageBitrateKbps60s ?? null) : null,
@@ -239,7 +241,8 @@ export default function App() {
                 discardedFrames: targetPath.metrics.discardedFrames
               }
             ];
-            const capped = next.slice(-120);
+            // Keep up to 3 hours (10,800 samples) in memory
+            const capped = next.slice(-10800);
             currentSampleCount = capped.length;
             return capped;
           });
