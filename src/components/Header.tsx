@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import {
   Activity,
   Radio,
@@ -12,11 +12,14 @@ import {
   Sun,
   Moon
 } from 'lucide-react';
-import { AppEnv, BackendHealth, ConnectionConfig } from '../types';
+import { AppEnv, BackendHealth, ConnectionConfig, StreamPath } from '../types';
+import { HeaderPresentationPolicyEvaluator } from '../policies/telemetryPresentationPolicy';
 
 interface HeaderProps {
   health: BackendHealth | null;
   config: ConnectionConfig;
+  paths?: StreamPath[];
+  selectedPathName?: string;
   activeTab: 'overview' | 'telemetry' | 'host' | 'experiments' | 'logs';
   setActiveTab: (tab: 'overview' | 'telemetry' | 'host' | 'experiments' | 'logs') => void;
   onOpenSettings: () => void;
@@ -30,6 +33,8 @@ interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({
   health,
   config,
+  paths = [],
+  selectedPathName,
   activeTab,
   setActiveTab,
   onOpenSettings,
@@ -40,6 +45,44 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleTheme
 }) => {
   const isDark = theme === 'dark';
+  const evaluatorRef = useRef<HeaderPresentationPolicyEvaluator | null>(null);
+  if (!evaluatorRef.current) {
+    evaluatorRef.current = new HeaderPresentationPolicyEvaluator();
+  }
+
+  // Identify active stream path snapshot
+  const activePath = paths.length > 0
+    ? (paths.find((p) => p.name === selectedPathName) || paths[0])
+    : null;
+  const snap = activePath?.normalizedSnapshot;
+
+  const isBackendOffline = !health || health.status === 'offline' || health.status === 'error' || (health.runtimeDiagnostics && !health.runtimeDiagnostics.backendReachable);
+  const isMediaMtxOffline = health?.mediamtxConnected === false || (health?.runtimeDiagnostics && !health.runtimeDiagnostics.mediaMtxApiReachable);
+
+  const streamState = snap
+    ? snap.stream.state
+    : isBackendOffline
+    ? 'BACKEND_OFFLINE'
+    : isMediaMtxOffline
+    ? 'MEDIAMTX_OFFLINE'
+    : 'OFFLINE';
+
+  const incomingSmoothedKbps = snap
+    ? (snap.telemetry.smoothedBitrateKbps ?? snap.telemetry.measuredBitrateKbps)
+    : (activePath ? activePath.metrics.measuredBitrateKbps : (health?.measuredBitrateKbps ?? null));
+
+  const collectorSequence = snap?.collectorSequence;
+  const sampledAt = snap?.telemetry.sampledAt;
+
+  const evaluationResult = evaluatorRef.current.evaluate({
+    incomingSmoothedKbps,
+    streamState,
+    collectorSequence,
+    sampledAt
+  });
+
+  const presentedHeaderBitrateKbps = evaluationResult.presentedHeaderBitrateKbps;
+  const configuredTargetBitrateKbps = snap?.telemetry.configuredTargetBitrateKbps ?? health?.configuredTargetBitrateKbps ?? 6000;
 
   const getEnvBadgeColor = (env: AppEnv) => {
     switch (env) {
@@ -185,7 +228,7 @@ export const Header: React.FC<HeaderProps> = ({
           {/* Metrics & Actions - Compact Density */}
           <div className="flex items-center flex-wrap gap-2">
             
-            {/* Total Bitrate Pill */}
+            {/* Total / Presented Bitrate Pill */}
             <div
               className={`border rounded-lg px-2.5 py-1 text-xs font-mono flex items-center gap-1.5 ${
                 isDark ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
@@ -194,11 +237,13 @@ export const Header: React.FC<HeaderProps> = ({
               <Activity className="w-3.5 h-3.5 text-emerald-500" />
               <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Live Bitrate:</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {health && health.measuredBitrateKbps != null ? `${(health.measuredBitrateKbps / 1000).toFixed(2)} Mbps` : '--'}
+                {presentedHeaderBitrateKbps !== null && presentedHeaderBitrateKbps !== undefined
+                  ? `${(presentedHeaderBitrateKbps / 1000).toFixed(2)} Mbps`
+                  : '--'}
               </span>
-              {health?.configuredTargetBitrateKbps && (
+              {configuredTargetBitrateKbps && (
                 <span className="text-[10px] opacity-75 ml-1">
-                  (Target: {(health.configuredTargetBitrateKbps / 1000).toFixed(2)} Mbps)
+                  (Target: {(configuredTargetBitrateKbps / 1000).toFixed(2)} Mbps)
                 </span>
               )}
             </div>

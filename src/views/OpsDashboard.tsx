@@ -157,6 +157,8 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
       <Header
         health={health}
         config={config}
+        paths={paths}
+        selectedPathName={selectedPathName}
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onOpenSettings={() => setIsSettingsOpen(true)}

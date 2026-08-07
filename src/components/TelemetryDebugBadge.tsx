@@ -6,6 +6,7 @@ import {
   addMemoryDiagnosticSample,
   MemoryDiagnosticSample
 } from '../services/api/telemetryDebug';
+import { evaluateRealTestReadiness } from '../policies/telemetryPresentationPolicy';
 
 export interface TelemetryDebugBadgeProps {
   healthStatus: 'healthy' | 'degraded' | 'stale';
@@ -13,6 +14,10 @@ export interface TelemetryDebugBadgeProps {
   lastUpdateAgeMs: number | null;
   adapterInstanceId: string;
   subscriberCount: number;
+  duplicateSnapshotDetected?: boolean;
+  backendReachable?: boolean;
+  mediaMtxReachable?: boolean;
+  headerSubscriptionActive?: boolean;
 }
 
 export const TelemetryDebugBadge: React.FC<TelemetryDebugBadgeProps> = ({
@@ -20,7 +25,11 @@ export const TelemetryDebugBadge: React.FC<TelemetryDebugBadgeProps> = ({
   source,
   lastUpdateAgeMs,
   adapterInstanceId,
-  subscriberCount
+  subscriberCount,
+  duplicateSnapshotDetected = false,
+  backendReachable = true,
+  mediaMtxReachable = true,
+  headerSubscriptionActive = true
 }) => {
   const [latestSample, setLatestSample] = useState<MemoryDiagnosticSample | null>(null);
 
@@ -56,6 +65,16 @@ export const TelemetryDebugBadge: React.FC<TelemetryDebugBadgeProps> = ({
     return null;
   }
 
+  const readiness = evaluateRealTestReadiness({
+    isMockMode: source === 'mock',
+    backendReachable,
+    mediaMtxReachable,
+    lastUpdateAgeMs,
+    activeCollectorCount: subscriberCount,
+    headerSubscriptionActive,
+    duplicateSnapshotDetected
+  });
+
   const getStatusColor = () => {
     switch (healthStatus) {
       case 'healthy':
@@ -64,17 +83,6 @@ export const TelemetryDebugBadge: React.FC<TelemetryDebugBadgeProps> = ({
         return 'bg-amber-500';
       case 'stale':
         return 'bg-rose-500';
-    }
-  };
-
-  const getStatusText = () => {
-    switch (healthStatus) {
-      case 'healthy':
-        return 'TELEMETRY LIVE';
-      case 'degraded':
-        return 'DEGRADED';
-      case 'stale':
-        return 'STALE';
     }
   };
 
@@ -97,16 +105,24 @@ export const TelemetryDebugBadge: React.FC<TelemetryDebugBadgeProps> = ({
   return (
     <div
       className="fixed bottom-4 right-4 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900/90 text-white text-xs font-mono shadow-lg border border-slate-700/80 backdrop-blur-md transition-all duration-200 pointer-events-auto"
-      title="Telemetry Lifecycle Debug Indicator (VITE_TELEMETRY_DEBUG=true)"
+      title={`Telemetry Lifecycle Debug Indicator | Readiness: ${readiness.statusLabel} ${
+        readiness.blockingReasons.length > 0 ? `(${readiness.blockingReasons.join(', ')})` : ''
+      }`}
     >
       <span className={`w-2 h-2 rounded-full animate-pulse ${getStatusColor()}`} />
-      <span className="font-semibold tracking-wider text-[11px]">{getStatusText()}</span>
+      <span
+        className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+          readiness.isReady
+            ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+            : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+        }`}
+      >
+        {readiness.statusLabel}
+      </span>
       <span className="text-slate-500">|</span>
       <span className="text-slate-300">{formatSource(source)}</span>
       <span className="text-slate-500">|</span>
       <span className="text-slate-400">{formattedAge}</span>
-      <span className="text-slate-500">|</span>
-      <span className="text-slate-400 font-bold">{adapterInstanceId}</span>
       <span className="text-slate-500">|</span>
       <span className="text-slate-400">subs:{subscriberCount}</span>
     </div>
