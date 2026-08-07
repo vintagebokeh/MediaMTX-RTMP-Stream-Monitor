@@ -4,6 +4,8 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createServer as createViteServer } from 'vite';
 import os from 'os';
+import { MediaMtxTelemetryCollector } from './src/server/telemetry/MediaMtxTelemetryCollector';
+import { NormalizedStreamSnapshot, StreamPath } from './src/types';
 
 const app = express();
 const PORT = 3000;
@@ -14,6 +16,132 @@ app.use(express.json());
 // MediaMTX internal ports configured via environment variables
 const MEDIAMTX_CONTROL_API = process.env.MEDIAMTX_CONTROL_API || 'http://127.0.0.1:9997';
 const MEDIAMTX_METRICS_URL = process.env.MEDIAMTX_METRICS_URL || 'http://127.0.0.1:9998/metrics';
+
+const telemetryCollector = new MediaMtxTelemetryCollector({
+  controlApiUrl: MEDIAMTX_CONTROL_API,
+  metricsUrl: MEDIAMTX_METRICS_URL
+});
+
+function getMockNormalizedSnapshot(pathName = 'live/test'): NormalizedStreamSnapshot {
+  return {
+    path: pathName,
+    stream: {
+      configured: true,
+      ready: true,
+      available: true,
+      online: true,
+      state: 'LIVE',
+      readyTime: new Date(Date.now() - 3600000).toISOString(),
+      onlineTime: new Date(Date.now() - 3600000).toISOString()
+    },
+    publisher: {
+      connected: true,
+      type: 'RTMP',
+      sourceType: 'rtmpConn',
+      id: 'pub-live-test-01',
+      remoteAddress: '192.168.1.45:58410'
+    },
+    readers: {
+      count: 1,
+      items: [
+        {
+          type: 'webRTCSession',
+          id: 'reader-webrtc-01',
+          remoteAddress: '192.168.1.102:61204'
+        }
+      ]
+    },
+    media: {
+      tracks: ['H264', 'MPEG-4 Audio'],
+      video: {
+        codec: 'H264',
+        width: 1920,
+        height: 1080,
+        profile: 'Baseline',
+        level: '4.2'
+      },
+      audio: {
+        codec: 'MPEG-4 Audio',
+        sampleRate: 48000,
+        channels: 2
+      }
+    },
+    telemetry: {
+      measuredBitrateKbps: 6012,
+      inboundBytes: 2700000000,
+      outboundBytes: 1350000000,
+      inboundFramesInError: 0,
+      sampledAt: new Date().toISOString(),
+      freshness: 'live'
+    }
+  };
+}
+
+function mapSnapshotToStreamPath(snap: NormalizedStreamSnapshot): StreamPath {
+  const isPublisherConnected = snap.publisher.connected;
+
+  const publisherObj = isPublisherConnected ? {
+    id: snap.publisher.id || 'pub-unknown',
+    type: snap.publisher.sourceType || 'rtmpConn',
+    remoteAddr: snap.publisher.remoteAddress || '127.0.0.1',
+    state: 'publishing',
+    videoCodec: snap.media.video.codec || '',
+    videoResolution: snap.media.video.width && snap.media.video.height ? `${snap.media.video.width}x${snap.media.video.height}` : '',
+    videoFps: null,
+    audioCodec: snap.media.audio.codec || '',
+    audioSampleRate: snap.media.audio.sampleRate,
+    audioChannels: snap.media.audio.channels ? (snap.media.audio.channels === 2 ? 'stereo' : `${snap.media.audio.channels}ch`) : '',
+    targetBitrateKbps: null,
+    configuredTargetBitrateKbps: 6000,
+    currentBitrateKbps: snap.telemetry.measuredBitrateKbps,
+    measuredBitrateKbps: snap.telemetry.measuredBitrateKbps,
+    connectedAt: snap.stream.onlineTime || snap.telemetry.sampledAt,
+    bytesReceived: snap.telemetry.inboundBytes || 0
+  } : null;
+
+  const readersList = snap.readers.items.map(r => ({
+    id: r.id,
+    type: r.type,
+    remoteAddr: r.remoteAddress || '127.0.0.1',
+    protocol: r.type.toLowerCase().includes('webrtc') ? 'WebRTC' : 'RTMP',
+    connectedAt: snap.telemetry.sampledAt,
+    bytesSent: snap.telemetry.outboundBytes || 0
+  }));
+
+  return {
+    name: snap.path,
+    ready: snap.stream.ready,
+    tracks: snap.media.tracks,
+    bytesReceived: snap.telemetry.inboundBytes || 0,
+    bytesSent: snap.telemetry.outboundBytes || 0,
+    publisher: publisherObj as any,
+    readers: readersList,
+    publisherConnected: isPublisherConnected,
+    streamAvailable: snap.stream.available,
+    telemetrySource: snap.telemetry.freshness === 'unavailable' ? 'unavailable' : 'mediamtx-api',
+    telemetryFreshness: snap.telemetry.freshness,
+    normalizedSnapshot: snap,
+    metrics: {
+      currentBitrateKbps: snap.telemetry.measuredBitrateKbps,
+      measuredBitrateKbps: snap.telemetry.measuredBitrateKbps,
+      targetBitrateKbps: null,
+      configuredTargetBitrateKbps: 6000,
+      latencyMs: isPublisherConnected ? 2000 : null,
+      configuredLatencyTargetMs: 2000,
+      measuredLatencyMs: getLatestLatencyForPath(snap.path).valueMs,
+      measuredLatency: getLatestLatencyForPath(snap.path),
+      inboundErrors: snap.telemetry.inboundFramesInError || 0,
+      discardedFrames: 0,
+      fps: null,
+      jitterMs: null,
+      keyframeIntervalSec: null,
+      publisherConnected: isPublisherConnected,
+      streamAvailable: snap.stream.available,
+      telemetrySource: snap.telemetry.freshness === 'unavailable' ? 'unavailable' : 'mediamtx-api',
+      telemetryFreshness: snap.telemetry.freshness
+    }
+  };
+}
 
 // In-memory latency samples storage for V0.1
 interface LatencyMeasurement {
@@ -292,95 +420,135 @@ app.get('/api/v1/runtime-mode', async (req, res) => {
   });
 });
 
-// Helper for Real vs Mock path telemetry
-async function fetchRealPathsFromMediaMTX(): Promise<{ paths: any[]; connected: boolean }> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1200);
-    const resp = await fetch(`${MEDIAMTX_CONTROL_API}/v3/paths/list`, { signal: controller.signal });
-    clearTimeout(timeout);
-    if (resp.ok) {
-      const data = await resp.json();
-      const rawItems = data.items || [];
-      const mapped = rawItems.map((p: any) => {
-        const hasPublisher = Boolean(p.publisher && p.ready);
-        const measuredBitrate = hasPublisher ? (p.publisher.currentBitrateKbps ?? p.bytesReceived ? Math.round(p.bytesReceived / 1000) : null) : null;
-        return {
-          name: p.name,
-          ready: Boolean(p.ready),
-          tracks: p.tracks || [],
-          bytesReceived: p.bytesReceived || 0,
-          bytesSent: p.bytesSent || 0,
-          publisher: hasPublisher ? p.publisher : null,
-          readers: p.readers || [],
-          publisherConnected: hasPublisher,
-          streamAvailable: hasPublisher,
-          telemetrySource: 'mediamtx-api',
-          telemetryFreshness: 'live',
-          metrics: {
-            currentBitrateKbps: measuredBitrate,
-            measuredBitrateKbps: measuredBitrate,
-            targetBitrateKbps: 6000,
-            configuredTargetBitrateKbps: 6000,
-            latencyMs: hasPublisher ? 2000 : null,
-            configuredLatencyTargetMs: 2000,
-            measuredLatencyMs: getLatestLatencyForPath(p.name).valueMs,
-            measuredLatency: getLatestLatencyForPath(p.name),
-            inboundErrors: 0,
-            discardedFrames: 0,
-            fps: hasPublisher ? (p.publisher?.videoFps || 60) : null,
-            jitterMs: hasPublisher ? 1.5 : null,
-            keyframeIntervalSec: hasPublisher ? 2.0 : null,
-            publisherConnected: hasPublisher,
-            streamAvailable: hasPublisher,
-            telemetrySource: 'mediamtx-api',
-            telemetryFreshness: 'live'
-          }
-        };
-      });
-      return { paths: mapped, connected: true };
-    }
-  } catch (err) {
-    // MediaMTX offline
+// Helper for Real vs Mock path telemetry using MediaMtxTelemetryCollector
+async function fetchRealPathsFromMediaMTX(): Promise<{ paths: StreamPath[]; connected: boolean; rawSnapshots: NormalizedStreamSnapshot[] }> {
+  const result = await telemetryCollector.collectNormalizedSnapshots();
+  if (result.mediaMtxReachable) {
+    const mapped = result.items.map(snap => mapSnapshotToStreamPath(snap));
+    return { paths: mapped, connected: true, rawSnapshots: result.items };
   }
-
-  return { paths: [], connected: false };
+  return { paths: [], connected: false, rawSnapshots: [] };
 }
 
 function getOfflinePathData(name = 'live/test', connected = false) {
-  return {
-    name,
-    ready: false,
-    tracks: [],
-    bytesReceived: 0,
-    bytesSent: 0,
-    publisher: null,
-    readers: [],
-    publisherConnected: false,
-    streamAvailable: false,
-    telemetrySource: connected ? 'mediamtx-api' : 'unavailable',
-    telemetryFreshness: 'unavailable',
-    metrics: {
-      currentBitrateKbps: null,
+  const offlineSnap: NormalizedStreamSnapshot = {
+    path: name,
+    stream: {
+      configured: true,
+      ready: false,
+      available: false,
+      online: false,
+      state: connected ? 'OFFLINE' : 'MEDIAMTX_OFFLINE',
+      readyTime: null,
+      onlineTime: null
+    },
+    publisher: {
+      connected: false,
+      type: null,
+      sourceType: null,
+      id: null,
+      remoteAddress: null
+    },
+    readers: { count: 0, items: [] },
+    media: {
+      tracks: [],
+      video: { codec: null, width: null, height: null, profile: null, level: null },
+      audio: { codec: null, sampleRate: null, channels: null }
+    },
+    telemetry: {
       measuredBitrateKbps: null,
-      targetBitrateKbps: 6000,
-      configuredTargetBitrateKbps: 6000,
-      latencyMs: null,
-      configuredLatencyTargetMs: 2000,
-      measuredLatencyMs: getLatestLatencyForPath(name).valueMs,
-      measuredLatency: getLatestLatencyForPath(name),
-      inboundErrors: 0,
-      discardedFrames: 0,
-      fps: null,
-      jitterMs: null,
-      keyframeIntervalSec: null,
-      publisherConnected: false,
-      streamAvailable: false,
-      telemetrySource: connected ? 'mediamtx-api' : 'unavailable',
-      telemetryFreshness: 'unavailable'
+      inboundBytes: null,
+      outboundBytes: null,
+      inboundFramesInError: null,
+      sampledAt: new Date().toISOString(),
+      freshness: connected ? 'live' : 'unavailable'
     }
   };
+
+  return mapSnapshotToStreamPath(offlineSnap);
 }
+
+// Normalized Stream Snapshots Endpoint
+app.get('/api/v1/streams', async (req, res) => {
+  const isMock = process.env.VITE_USE_MOCK_DATA === 'true';
+
+  if (isMock) {
+    const snap = getMockNormalizedSnapshot();
+    return res.json({
+      items: [snap],
+      sampledAt: snap.telemetry.sampledAt
+    });
+  }
+
+  const result = await telemetryCollector.collectNormalizedSnapshots();
+  if (!result.mediaMtxReachable || result.items.length === 0) {
+    const offlineSnap = getOfflinePathData('live/test', result.mediaMtxReachable).normalizedSnapshot!;
+    return res.json({
+      items: [offlineSnap],
+      sampledAt: result.sampledAt
+    });
+  }
+
+  res.json({
+    items: result.items,
+    sampledAt: result.sampledAt
+  });
+});
+
+// Normalized Stream Snapshot by Query or Param
+app.get(['/api/v1/stream', '/api/v1/streams/:encodedPath(*)'], async (req, res) => {
+  const pathParam = req.params.encodedPath || (req.query.path as string) || 'live/test';
+  const targetPath = decodeURIComponent(pathParam);
+  const isMock = process.env.VITE_USE_MOCK_DATA === 'true';
+
+  if (isMock) {
+    return res.json(getMockNormalizedSnapshot(targetPath));
+  }
+
+  const result = await telemetryCollector.collectNormalizedSnapshots();
+  const match = result.items.find(i => i.path === targetPath);
+
+  if (match) {
+    return res.json(match);
+  }
+
+  // Fallback offline normalized snapshot for path
+  const offlineSnap = getOfflinePathData(targetPath, result.mediaMtxReachable).normalizedSnapshot!;
+  res.json(offlineSnap);
+});
+
+// Diagnostics Endpoint for Normalized Stream Collector
+app.get('/api/v1/debug/mediamtx-normalized', async (req, res) => {
+  const pathQuery = (req.query.path as string) || 'live/test';
+  const targetPath = decodeURIComponent(pathQuery);
+  const isMock = process.env.VITE_USE_MOCK_DATA === 'true';
+
+  if (isMock) {
+    const mockSnap = getMockNormalizedSnapshot(targetPath);
+    return res.json(
+      telemetryCollector.generateDiagnostics(
+        targetPath,
+        true,
+        true,
+        mockSnap.readers.count,
+        mockSnap
+      )
+    );
+  }
+
+  const result = await telemetryCollector.collectNormalizedSnapshots();
+  const match = result.items.find(i => i.path === targetPath);
+
+  res.json(
+    telemetryCollector.generateDiagnostics(
+      targetPath,
+      Boolean(match),
+      Boolean(match?.publisher.connected),
+      match ? match.readers.count : 0,
+      match || null
+    )
+  );
+});
 
 // 1. Health Endpoint
 app.get('/api/health', async (req, res) => {

@@ -6,6 +6,7 @@ import {
   HostMetrics,
   LatencyMeasurement,
   LogEntry,
+  NormalizedStreamSnapshot,
   RuntimeConfig,
   StreamInfo,
   StreamPath,
@@ -125,6 +126,29 @@ export class RealApiAdapter implements IMonitorApiAdapter {
           sampledAt: new Date().toISOString()
         }
       };
+    }
+  }
+
+  async getNormalizedStreams(): Promise<NormalizedStreamSnapshot[]> {
+    try {
+      const res = await fetch(`${this.getBaseUrl()}/api/v1/streams`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      return data.items || [];
+    } catch (err) {
+      console.warn('RealApiAdapter getNormalizedStreams error:', err);
+      return [];
+    }
+  }
+
+  async getNormalizedStream(pathName: string): Promise<NormalizedStreamSnapshot | null> {
+    try {
+      const encoded = encodeURIComponent(pathName);
+      const res = await fetch(`${this.getBaseUrl()}/api/v1/stream?path=${encoded}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (err) {
+      return null;
     }
   }
 

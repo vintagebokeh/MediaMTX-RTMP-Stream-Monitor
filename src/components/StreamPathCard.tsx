@@ -43,8 +43,10 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
   const [inputMs, setInputMs] = useState<string>('500');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const isPublisherConnected = path.publisherConnected ?? (publisher !== null);
-  const measuredBitrate = metrics.measuredBitrateKbps ?? (isPublisherConnected ? metrics.currentBitrateKbps : null);
+  const snap = path.normalizedSnapshot;
+  const isPublisherConnected = snap ? snap.publisher.connected : (path.publisherConnected ?? (publisher !== null));
+  const measuredBitrate = snap ? snap.telemetry.measuredBitrateKbps : (metrics.measuredBitrateKbps ?? (isPublisherConnected ? metrics.currentBitrateKbps : null));
+  const streamState = snap ? snap.stream.state : (isPublisherConnected ? (measuredBitrate !== null ? 'LIVE' : 'WARMING_UP') : 'OFFLINE');
   const bitrateMbps = measuredBitrate !== null ? (measuredBitrate / 1000).toFixed(2) : '--';
   const configuredTargetBitrate = metrics.configuredTargetBitrateKbps ?? metrics.targetBitrateKbps ?? 6000;
   const targetMbps = (configuredTargetBitrate / 1000).toFixed(2);
@@ -61,10 +63,16 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
         style: isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-800'
       };
     }
-    if (!isPublisherConnected || measuredBitrate === null) {
+    if (streamState === 'OFFLINE' || !isPublisherConnected) {
       return {
         label: 'NO SIGNAL',
         style: isDark ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-800'
+      };
+    }
+    if (streamState === 'WARMING_UP') {
+      return {
+        label: 'WARMING UP',
+        style: isDark ? 'bg-blue-500/20 text-blue-400' : 'bg-blue-100 text-blue-800'
       };
     }
     if (metrics.telemetryFreshness === 'stale') {
@@ -74,7 +82,7 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
       };
     }
     return {
-      label: 'OPTIMAL',
+      label: 'OPTIMAL (LIVE)',
       style: isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-800'
     };
   };

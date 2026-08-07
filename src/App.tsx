@@ -97,9 +97,9 @@ export default function App() {
   const [history, setHistory] = useState<
     Array<{
       time: string;
-      bitrateKbps: number;
-      targetKbps: number;
-      latencyMs: number;
+      bitrateKbps: number | null;
+      targetKbps: number | null;
+      latencyMs: number | null;
       inboundErrors: number;
       discardedFrames: number;
     }>
@@ -173,12 +173,17 @@ export default function App() {
         let currentSampleCount = 0;
         if (targetPath) {
           const timeLabel = new Date(snapshot.timestamp).toLocaleTimeString();
+          const snap = targetPath.normalizedSnapshot;
+          const measuredBitrate = snap
+            ? snap.telemetry.measuredBitrateKbps
+            : (targetPath.metrics.measuredBitrateKbps ?? (targetPath.publisherConnected ? targetPath.metrics.currentBitrateKbps : null));
+
           setHistory((prev) => {
             const next = [
               ...prev,
               {
                 time: timeLabel,
-                bitrateKbps: targetPath.metrics.measuredBitrateKbps ?? (targetPath.publisherConnected ? targetPath.metrics.currentBitrateKbps : null),
+                bitrateKbps: measuredBitrate,
                 targetKbps: targetPath.metrics.configuredTargetBitrateKbps ?? targetPath.metrics.targetBitrateKbps ?? 6000,
                 latencyMs: targetPath.metrics.measuredLatencyMs ?? targetPath.metrics.latencyMs,
                 inboundErrors: targetPath.metrics.inboundErrors,

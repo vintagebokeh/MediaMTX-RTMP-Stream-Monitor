@@ -8,6 +8,7 @@ import {
   LatencyMeasurement,
   LogEntry,
   MonitoringApi,
+  NormalizedStreamSnapshot,
   RuntimeConfig,
   RuntimeDiagnostics,
   StreamInfo,
@@ -50,6 +51,16 @@ export interface IMonitorApiAdapter extends MonitoringApi {
    * Get host system performance telemetry
    */
   getCurrentMetrics(): Promise<CurrentMetrics>;
+
+  /**
+   * Get all normalized stream snapshots
+   */
+  getNormalizedStreams(): Promise<NormalizedStreamSnapshot[]>;
+
+  /**
+   * Get single normalized stream snapshot
+   */
+  getNormalizedStream(path: string): Promise<NormalizedStreamSnapshot | null>;
 
   /**
    * Get all stream paths

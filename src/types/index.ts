@@ -6,6 +6,70 @@ export function resolveRuntimeDataMode(flagRawValue?: string): RuntimeDataMode {
   return flagRawValue === 'true' ? 'mock' : 'real';
 }
 
+export type TelemetryState =
+  | "OFFLINE"
+  | "WARMING_UP"
+  | "LIVE"
+  | "STALE"
+  | "BACKEND_OFFLINE"
+  | "MEDIAMTX_OFFLINE";
+
+export interface NormalizedStreamSnapshot {
+  path: string;
+
+  stream: {
+    configured: boolean;
+    ready: boolean;
+    available: boolean;
+    online: boolean;
+    state: TelemetryState;
+    readyTime: string | null;
+    onlineTime: string | null;
+  };
+
+  publisher: {
+    connected: boolean;
+    type: "RTMP" | "RTSP" | "SRT" | "WHIP" | "UNKNOWN" | null;
+    sourceType: string | null;
+    id: string | null;
+    remoteAddress: string | null;
+  };
+
+  readers: {
+    count: number;
+    items: Array<{
+      type: string;
+      id: string;
+      remoteAddress: string | null;
+    }>;
+  };
+
+  media: {
+    tracks: string[];
+    video: {
+      codec: string | null;
+      width: number | null;
+      height: number | null;
+      profile: string | null;
+      level: string | null;
+    };
+    audio: {
+      codec: string | null;
+      sampleRate: number | null;
+      channels: number | null;
+    };
+  };
+
+  telemetry: {
+    measuredBitrateKbps: number | null;
+    inboundBytes: number | null;
+    outboundBytes: number | null;
+    inboundFramesInError: number | null;
+    sampledAt: string;
+    freshness: "live" | "stale" | "unavailable";
+  };
+}
+
 export interface RuntimeDiagnostics {
   dataMode: RuntimeDataMode;
   mockEnabled: boolean;
@@ -104,6 +168,7 @@ export interface StreamPath {
   streamAvailable: boolean;
   telemetrySource: TelemetrySource;
   telemetryFreshness: TelemetryFreshness;
+  normalizedSnapshot?: NormalizedStreamSnapshot;
 }
 
 export type StreamInfo = StreamPath;

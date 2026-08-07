@@ -36,9 +36,9 @@ interface OpsDashboardProps {
   latestLatencySample: LatencyMeasurement | null;
   history: Array<{
     time: string;
-    bitrateKbps: number;
-    targetKbps: number;
-    latencyMs: number;
+    bitrateKbps: number | null;
+    targetKbps: number | null;
+    latencyMs: number | null;
     inboundErrors: number;
     discardedFrames: number;
   }>;

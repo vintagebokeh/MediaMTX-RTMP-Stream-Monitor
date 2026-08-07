@@ -5,9 +5,10 @@ export function selectProducerViewModel(
   health: HealthResponse | null,
   config: RuntimeConfig | null
 ): ProducerDashboardViewModel {
-  const activePath = paths.find(p => p.publisher !== null) || paths[0] || null;
+  const activePath = paths.find(p => p.publisher !== null || p.normalizedSnapshot?.publisher?.connected) || paths[0] || null;
   const publisher = activePath?.publisher || null;
-  const isPublisherConnected = publisher !== null;
+  const snap = activePath?.normalizedSnapshot;
+  const isPublisherConnected = snap ? snap.publisher.connected : (publisher !== null);
 
   let status: 'online' | 'warning' | 'offline' = 'offline';
   if (isPublisherConnected) {

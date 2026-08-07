@@ -6,6 +6,7 @@ import {
   HostMetrics,
   LatencyMeasurement,
   LogEntry,
+  NormalizedStreamSnapshot,
   PublisherInfo,
   ReaderInfo,
   RuntimeConfig,
@@ -323,6 +324,72 @@ export class MockApiAdapter implements IMonitorApiAdapter {
         sampledAt: new Date().toISOString()
       }
     };
+  }
+
+  async getNormalizedStreams(): Promise<NormalizedStreamSnapshot[]> {
+    const list: NormalizedStreamSnapshot[] = [];
+    for (const p of this.paths.values()) {
+      if (p.normalizedSnapshot) {
+        list.push(p.normalizedSnapshot);
+      } else {
+        list.push({
+          path: p.name,
+          stream: {
+            configured: true,
+            ready: p.ready,
+            available: p.streamAvailable,
+            online: p.ready,
+            state: p.publisherConnected ? 'LIVE' : 'OFFLINE',
+            readyTime: new Date(Date.now() - 3600000).toISOString(),
+            onlineTime: new Date(Date.now() - 3600000).toISOString()
+          },
+          publisher: {
+            connected: p.publisherConnected,
+            type: 'RTMP',
+            sourceType: p.publisher?.type || 'rtmpConn',
+            id: p.publisher?.id || null,
+            remoteAddress: p.publisher?.remoteAddr || null
+          },
+          readers: {
+            count: p.readers.length,
+            items: p.readers.map(r => ({
+              type: r.type,
+              id: r.id,
+              remoteAddress: r.remoteAddr
+            }))
+          },
+          media: {
+            tracks: p.tracks,
+            video: {
+              codec: p.publisher?.videoCodec || 'H264',
+              width: 1920,
+              height: 1080,
+              profile: 'Baseline',
+              level: '4.2'
+            },
+            audio: {
+              codec: p.publisher?.audioCodec || 'MPEG-4 Audio',
+              sampleRate: 48000,
+              channels: 2
+            }
+          },
+          telemetry: {
+            measuredBitrateKbps: p.metrics.measuredBitrateKbps,
+            inboundBytes: p.bytesReceived,
+            outboundBytes: p.bytesSent,
+            inboundFramesInError: p.metrics.inboundErrors,
+            sampledAt: new Date().toISOString(),
+            freshness: 'live'
+          }
+        });
+      }
+    }
+    return list;
+  }
+
+  async getNormalizedStream(pathName: string): Promise<NormalizedStreamSnapshot | null> {
+    const list = await this.getNormalizedStreams();
+    return list.find(s => s.path === pathName) || null;
   }
 
   async getPaths(): Promise<StreamPath[]> {
