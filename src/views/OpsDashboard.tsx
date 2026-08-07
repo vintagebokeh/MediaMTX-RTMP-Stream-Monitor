@@ -115,49 +115,39 @@ export const OpsDashboard: React.FC<OpsDashboardProps> = ({
 
   const isDark = theme === 'dark';
 
-  const currentPath = paths.find((p) => p.name === selectedPathName) || paths[0] || {
-    name: 'live/test',
-    ready: true,
-    tracks: ['H264', 'AAC'],
-    bytesReceived: 2700000000,
-    bytesSent: 1350000000,
-    publisher: {
-      id: 'pub-live-test-01',
-      type: 'rtmpConn',
-      remoteAddr: '192.168.1.45:58410',
-      state: 'publishing',
-      videoCodec: 'H.264',
-      videoResolution: '1920x1080',
-      videoFps: 60,
-      audioCodec: 'AAC',
-      audioSampleRate: 48000,
-      audioChannels: 'stereo',
-      targetBitrateKbps: 6000,
-      currentBitrateKbps: 6000,
-      connectedAt: new Date().toISOString(),
-      bytesReceived: 2700000000
-    },
-    readers: [
-      {
-        id: 'rd-webrtc-892',
-        type: 'webrtcConn',
-        remoteAddr: '10.0.0.12:61200',
-        protocol: 'WebRTC',
-        connectedAt: new Date().toISOString(),
-        bytesSent: 1350000000
-      }
-    ],
+  const defaultOfflinePath: StreamPath = {
+    name: selectedPathName || 'live/test',
+    ready: false,
+    tracks: [],
+    bytesReceived: 0,
+    bytesSent: 0,
+    publisher: null,
+    readers: [],
+    publisherConnected: false,
+    streamAvailable: false,
+    telemetrySource: 'unavailable',
+    telemetryFreshness: 'unavailable',
     metrics: {
-      currentBitrateKbps: 6000,
+      currentBitrateKbps: null,
+      measuredBitrateKbps: null,
       targetBitrateKbps: 6000,
-      latencyMs: 2000,
+      configuredTargetBitrateKbps: 6000,
+      latencyMs: null,
+      configuredLatencyTargetMs: 2000,
+      measuredLatencyMs: null,
       inboundErrors: 0,
       discardedFrames: 0,
-      fps: 60,
-      jitterMs: 1.5,
-      keyframeIntervalSec: 2.0
+      fps: null,
+      jitterMs: null,
+      keyframeIntervalSec: null,
+      publisherConnected: false,
+      streamAvailable: false,
+      telemetrySource: 'unavailable',
+      telemetryFreshness: 'unavailable'
     }
   };
+
+  const currentPath = paths.find((p) => p.name === selectedPathName) || paths[0] || defaultOfflinePath;
 
   return (
     <div className={`min-h-screen font-sans selection:bg-indigo-500 selection:text-white ${

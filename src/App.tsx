@@ -178,9 +178,9 @@ export default function App() {
               ...prev,
               {
                 time: timeLabel,
-                bitrateKbps: targetPath.metrics.currentBitrateKbps,
-                targetKbps: targetPath.metrics.targetBitrateKbps,
-                latencyMs: targetPath.metrics.latencyMs,
+                bitrateKbps: targetPath.metrics.measuredBitrateKbps ?? (targetPath.publisherConnected ? targetPath.metrics.currentBitrateKbps : null),
+                targetKbps: targetPath.metrics.configuredTargetBitrateKbps ?? targetPath.metrics.targetBitrateKbps ?? 6000,
+                latencyMs: targetPath.metrics.measuredLatencyMs ?? targetPath.metrics.latencyMs,
                 inboundErrors: targetPath.metrics.inboundErrors,
                 discardedFrames: targetPath.metrics.discardedFrames
               }

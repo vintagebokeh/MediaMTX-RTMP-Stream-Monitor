@@ -101,7 +101,9 @@ export class MockApiAdapter implements IMonitorApiAdapter {
       audioSampleRate: 48000,
       audioChannels: 'stereo',
       targetBitrateKbps: 6000,
+      configuredTargetBitrateKbps: 6000,
       currentBitrateKbps: 6012,
+      measuredBitrateKbps: 6012,
       connectedAt: new Date(Date.now() - 3600000).toISOString(),
       bytesReceived: 2700000000 // ~2.7 GB
     };
@@ -123,15 +125,27 @@ export class MockApiAdapter implements IMonitorApiAdapter {
       bytesSent: 1350000000,
       publisher,
       readers: [reader],
+      publisherConnected: true,
+      streamAvailable: true,
+      telemetrySource: 'mock',
+      telemetryFreshness: 'live',
       metrics: {
         currentBitrateKbps: 6012,
+        measuredBitrateKbps: 6012,
         targetBitrateKbps: 6000,
+        configuredTargetBitrateKbps: 6000,
         latencyMs: 2010, // ~2.0s
+        configuredLatencyTargetMs: 2000,
+        measuredLatencyMs: 2010,
         inboundErrors: 0, // strictly 0
         discardedFrames: 0, // strictly 0
         fps: 60,
         jitterMs: 1.8,
-        keyframeIntervalSec: 2.0
+        keyframeIntervalSec: 2.0,
+        publisherConnected: true,
+        streamAvailable: true,
+        telemetrySource: 'mock',
+        telemetryFreshness: 'live'
       }
     };
 
@@ -198,11 +212,14 @@ export class MockApiAdapter implements IMonitorApiAdapter {
       const currentBitrate = 6000 + jitterKbps;
 
       testPath.publisher.currentBitrateKbps = currentBitrate;
+      testPath.publisher.measuredBitrateKbps = currentBitrate;
       testPath.metrics.currentBitrateKbps = currentBitrate;
+      testPath.metrics.measuredBitrateKbps = currentBitrate;
 
       // Latency fluctuation: 1980ms to 2020ms (~2.0s)
       const latJitter = Math.floor(Math.cos(now / 2000) * 15 + Math.random() * 10 - 5);
       testPath.metrics.latencyMs = 2000 + latJitter;
+      testPath.metrics.measuredLatencyMs = 2000 + latJitter;
 
       // Ensure 0 errors and 0 discarded frames for live/test
       testPath.metrics.inboundErrors = 0;
@@ -265,7 +282,9 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     pathList.forEach((p) => {
       if (p.publisher) totalPubs++;
       totalRds += p.readers.length;
-      totalBitrate += p.metrics.currentBitrateKbps;
+      if (p.metrics.measuredBitrateKbps !== null) {
+        totalBitrate += p.metrics.measuredBitrateKbps;
+      }
     });
 
     return {
@@ -276,8 +295,12 @@ export class MockApiAdapter implements IMonitorApiAdapter {
       totalPublishers: totalPubs,
       totalReaders: totalRds,
       totalBitrateKbps: totalBitrate,
+      measuredBitrateKbps: totalBitrate,
+      configuredTargetBitrateKbps: 6000,
       appEnv: this.config.appEnv,
-      mockMode: true
+      mockMode: true,
+      telemetrySource: 'mock',
+      telemetryFreshness: 'live'
     };
   }
 
@@ -436,15 +459,27 @@ export class MockApiAdapter implements IMonitorApiAdapter {
         bytesReceived: 0
       },
       readers: [],
+      publisherConnected: true,
+      streamAvailable: true,
+      telemetrySource: 'mock',
+      telemetryFreshness: 'live',
       metrics: {
         currentBitrateKbps: 4500,
+        measuredBitrateKbps: 4500,
         targetBitrateKbps: 4500,
+        configuredTargetBitrateKbps: 4500,
         latencyMs: 1850,
+        configuredLatencyTargetMs: 2000,
+        measuredLatencyMs: 1850,
         inboundErrors: 0,
         discardedFrames: 0,
         fps: 30,
         jitterMs: 2.1,
-        keyframeIntervalSec: 2.0
+        keyframeIntervalSec: 2.0,
+        publisherConnected: true,
+        streamAvailable: true,
+        telemetrySource: 'mock',
+        telemetryFreshness: 'live'
       }
     };
 

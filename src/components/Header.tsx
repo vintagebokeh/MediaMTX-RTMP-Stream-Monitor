@@ -140,10 +140,15 @@ export const Header: React.FC<HeaderProps> = ({
               }`}
             >
               <Activity className="w-3.5 h-3.5 text-emerald-500" />
-              <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Bitrate:</span>
+              <span className={isDark ? 'text-slate-400' : 'text-slate-500'}>Live Bitrate:</span>
               <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                {health ? (health.totalBitrateKbps / 1000).toFixed(2) : '6.00'} Mbps
+                {health && health.measuredBitrateKbps != null ? `${(health.measuredBitrateKbps / 1000).toFixed(2)} Mbps` : '--'}
               </span>
+              {health?.configuredTargetBitrateKbps && (
+                <span className="text-[10px] opacity-75 ml-1">
+                  (Target: {(health.configuredTargetBitrateKbps / 1000).toFixed(2)} Mbps)
+                </span>
+              )}
             </div>
 
             {/* Refresh Button */}

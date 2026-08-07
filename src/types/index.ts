@@ -1,5 +1,18 @@
 export type AppEnv = 'local' | 'lan' | 'remote';
 
+export type TelemetrySource =
+  | "mock"
+  | "mediamtx-api"
+  | "metrics"
+  | "websocket"
+  | "http-polling"
+  | "unavailable";
+
+export type TelemetryFreshness =
+  | "live"
+  | "stale"
+  | "unavailable";
+
 export interface ConnectionConfig {
   apiUrl: string;
   wsUrl: string;
@@ -14,12 +27,14 @@ export interface PublisherInfo {
   state: 'publishing' | 'idle' | 'error';
   videoCodec: string; // "H.264"
   videoResolution: string; // "1920x1080"
-  videoFps: number; // 60
+  videoFps: number | null; // 60
   audioCodec: string; // "AAC"
-  audioSampleRate: number; // 48000
+  audioSampleRate: number | null; // 48000
   audioChannels: string; // "stereo"
-  targetBitrateKbps: number; // 6000
-  currentBitrateKbps: number;
+  targetBitrateKbps: number | null; // 6000
+  configuredTargetBitrateKbps?: number | null;
+  currentBitrateKbps: number | null;
+  measuredBitrateKbps?: number | null;
   connectedAt: string;
   bytesReceived: number;
 }
@@ -35,22 +50,29 @@ export interface ReaderInfo {
 
 export interface LatencyMeasurement {
   valueMs: number | null;
-  source: 'manual' | 'embedded_timestamp' | 'browser_estimate' | 'mock';
+  source: 'manual' | 'embedded_timestamp' | 'browser_estimate' | 'mock' | 'none';
   measuredAt: string | null;
   confidence: 'low' | 'medium' | 'high';
 }
 
 export interface StreamMetrics {
-  currentBitrateKbps: number;
-  targetBitrateKbps: number;
-  latencyMs: number; // Configured latency target / MediaMTX buffer target
-  configuredLatencyTargetMs?: number;
+  currentBitrateKbps: number | null;
+  measuredBitrateKbps: number | null;
+  targetBitrateKbps: number | null;
+  configuredTargetBitrateKbps: number | null;
+  latencyMs: number | null; // Configured latency target / MediaMTX buffer target
+  configuredLatencyTargetMs: number | null;
+  measuredLatencyMs: number | null;
   measuredLatency?: LatencyMeasurement | null;
   inboundErrors: number; // 0
   discardedFrames: number; // 0
-  fps: number;
-  jitterMs: number;
-  keyframeIntervalSec: number;
+  fps: number | null;
+  jitterMs: number | null;
+  keyframeIntervalSec: number | null;
+  publisherConnected: boolean;
+  streamAvailable: boolean;
+  telemetrySource: TelemetrySource;
+  telemetryFreshness: TelemetryFreshness;
 }
 
 export interface StreamPath {
@@ -62,6 +84,10 @@ export interface StreamPath {
   publisher: PublisherInfo | null;
   readers: ReaderInfo[];
   metrics: StreamMetrics;
+  publisherConnected: boolean;
+  streamAvailable: boolean;
+  telemetrySource: TelemetrySource;
+  telemetryFreshness: TelemetryFreshness;
 }
 
 export type StreamInfo = StreamPath;
@@ -96,15 +122,19 @@ export interface TelemetrySnapshot {
 }
 
 export interface BackendHealth {
-  status: 'ok' | 'degraded' | 'error';
+  status: 'ok' | 'degraded' | 'error' | 'offline';
   uptime: number;
   mediamtxConnected: boolean;
   activePathsCount: number;
   totalPublishers: number;
   totalReaders: number;
-  totalBitrateKbps: number;
+  totalBitrateKbps: number | null;
+  measuredBitrateKbps: number | null;
+  configuredTargetBitrateKbps: number | null;
   appEnv: AppEnv;
   mockMode: boolean;
+  telemetrySource?: TelemetrySource;
+  telemetryFreshness?: TelemetryFreshness;
 }
 
 export type HealthResponse = BackendHealth;

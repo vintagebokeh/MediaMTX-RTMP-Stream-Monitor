@@ -14,9 +14,9 @@ import { ChartErrorBoundary } from './ChartErrorBoundary';
 
 interface ChartPoint {
   time: string;
-  bitrateKbps: number;
-  targetKbps: number;
-  latencyMs: number;
+  bitrateKbps: number | null;
+  targetKbps: number | null;
+  latencyMs: number | null;
   inboundErrors: number;
   discardedFrames: number;
 }
@@ -42,7 +42,7 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme 
   // Sanitize and validate history points
   const safeHistory = Array.isArray(history)
     ? history.filter(p => {
-        const isValid = p && typeof p.time === 'string' && typeof p.bitrateKbps === 'number';
+        const isValid = p && typeof p.time === 'string' && (p.bitrateKbps === null || typeof p.bitrateKbps === 'number');
         if (!isValid) {
           console.warn('[BitrateChart] Invalid data-shape detected in history sample:', p);
         }
@@ -101,7 +101,7 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme 
               stroke={axisColor}
               fontSize={10}
               tickLine={false}
-              domain={[5000, 7000]}
+              domain={[0, 'auto']}
               unit=" Kbps"
             />
             <Tooltip
@@ -120,6 +120,7 @@ export const BitrateChart: React.FC<BitrateChartProps> = ({ history = [], theme 
               name="Current Bitrate"
               stroke="#10b981"
               strokeWidth={2}
+              connectNulls={false}
               dot={false}
               isAnimationActive={false}
             />

@@ -43,13 +43,43 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
   const [inputMs, setInputMs] = useState<string>('500');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
-  const bitrateMbps = (metrics.currentBitrateKbps / 1000).toFixed(2);
-  const targetMbps = (metrics.targetBitrateKbps / 1000).toFixed(2);
+  const isPublisherConnected = path.publisherConnected ?? (publisher !== null);
+  const measuredBitrate = metrics.measuredBitrateKbps ?? (isPublisherConnected ? metrics.currentBitrateKbps : null);
+  const bitrateMbps = measuredBitrate !== null ? (measuredBitrate / 1000).toFixed(2) : '--';
+  const configuredTargetBitrate = metrics.configuredTargetBitrateKbps ?? metrics.targetBitrateKbps ?? 6000;
+  const targetMbps = (configuredTargetBitrate / 1000).toFixed(2);
   const configuredTargetMs = metrics.configuredLatencyTargetMs || 2000;
   const configuredTargetSec = (configuredTargetMs / 1000).toFixed(2);
 
   const activeSample = path.metrics.measuredLatency || latestLatencySample;
-  const measuredMs = activeSample?.valueMs ?? null;
+  const measuredMs = activeSample?.valueMs ?? metrics.measuredLatencyMs ?? null;
+
+  const getHealthBadge = () => {
+    if (metrics.telemetrySource === 'mock') {
+      return {
+        label: 'MOCK DATA',
+        style: isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-800'
+      };
+    }
+    if (!isPublisherConnected || measuredBitrate === null) {
+      return {
+        label: 'NO SIGNAL',
+        style: isDark ? 'bg-rose-500/20 text-rose-400' : 'bg-rose-100 text-rose-800'
+      };
+    }
+    if (metrics.telemetryFreshness === 'stale') {
+      return {
+        label: 'STALE DATA',
+        style: isDark ? 'bg-amber-500/20 text-amber-400' : 'bg-amber-100 text-amber-800'
+      };
+    }
+    return {
+      label: 'OPTIMAL',
+      style: isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-800'
+    };
+  };
+
+  const healthBadge = getHealthBadge();
 
   const handleSaveSample = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -308,10 +338,8 @@ export const StreamPathCard: React.FC<StreamPathCardProps> = ({
                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
                 Stream Health
               </span>
-              <span className={`text-[10px] font-semibold px-1 py-0.2 rounded ${
-                isDark ? 'bg-emerald-500/20 text-emerald-400' : 'bg-emerald-100 text-emerald-800'
-              }`}>
-                Optimal
+              <span className={`text-[10px] font-semibold px-1 py-0.2 rounded ${healthBadge.style}`}>
+                {healthBadge.label}
               </span>
             </div>
             <div className="flex justify-between items-baseline pt-0.5">

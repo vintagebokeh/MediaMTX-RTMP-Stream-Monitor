@@ -85,9 +85,13 @@ export class RealApiAdapter implements IMonitorApiAdapter {
         activePathsCount: 0,
         totalPublishers: 0,
         totalReaders: 0,
-        totalBitrateKbps: 0,
+        totalBitrateKbps: null,
+        measuredBitrateKbps: null,
+        configuredTargetBitrateKbps: 6000,
         appEnv: this.config.appEnv,
-        mockMode: false
+        mockMode: false,
+        telemetrySource: 'unavailable',
+        telemetryFreshness: 'unavailable'
       };
     }
   }
