@@ -240,6 +240,58 @@ app.post('/api/v1/latency-samples', (req, res) => {
   res.json(sample);
 });
 
+// 0d. GET Runtime Diagnostics Mode Endpoint
+app.get('/api/v1/runtime-mode', async (req, res) => {
+  const rawMockFlag = process.env.VITE_USE_MOCK_DATA;
+  const isMock = rawMockFlag === 'true';
+  const sampledAt = new Date().toISOString();
+
+  if (isMock) {
+    return res.json({
+      dataMode: 'mock',
+      mockEnabled: true,
+      adapter: 'mock',
+      backendReachable: true,
+      mediaMtxApiReachable: true,
+      mediaMtxMetricsReachable: true,
+      sampledAt
+    });
+  }
+
+  let mediaMtxApiReachable = false;
+  let mediaMtxMetricsReachable = false;
+
+  try {
+    const controller1 = new AbortController();
+    const timeout1 = setTimeout(() => controller1.abort(), 1000);
+    const resp1 = await fetch(`${MEDIAMTX_CONTROL_API}/v3/paths/list`, { signal: controller1.signal });
+    clearTimeout(timeout1);
+    mediaMtxApiReachable = resp1.ok;
+  } catch (e) {
+    mediaMtxApiReachable = false;
+  }
+
+  try {
+    const controller2 = new AbortController();
+    const timeout2 = setTimeout(() => controller2.abort(), 1000);
+    const resp2 = await fetch(`${MEDIAMTX_METRICS_URL}/metrics`, { signal: controller2.signal });
+    clearTimeout(timeout2);
+    mediaMtxMetricsReachable = resp2.ok;
+  } catch (e) {
+    mediaMtxMetricsReachable = false;
+  }
+
+  return res.json({
+    dataMode: 'real',
+    mockEnabled: false,
+    adapter: 'real',
+    backendReachable: true,
+    mediaMtxApiReachable,
+    mediaMtxMetricsReachable,
+    sampledAt
+  });
+});
+
 // Helper for Real vs Mock path telemetry
 async function fetchRealPathsFromMediaMTX(): Promise<{ paths: any[]; connected: boolean }> {
   try {
@@ -808,6 +860,19 @@ async function startServer() {
   }
 
   server.listen(PORT, '0.0.0.0', () => {
+    const rawMockFlag = process.env.VITE_USE_MOCK_DATA;
+    const isMock = rawMockFlag === 'true';
+    const dataMode = isMock ? 'mock' : 'real';
+    const adapterType = isMock ? 'MockApiAdapter' : 'RealApiAdapter';
+
+    console.log('[MediaMTX Monitor Backend Runtime Banner]', {
+      runtimeDataMode: dataMode,
+      adapterType,
+      apiBaseUrl: process.env.VITE_MONITOR_API_URL || `http://0.0.0.0:${PORT}`,
+      wsUrl: process.env.VITE_MONITOR_WS_URL || `ws://0.0.0.0:${PORT}/ws/live`,
+      buildMode: process.env.NODE_ENV || 'development',
+      mockFlagRawValue: rawMockFlag ?? 'absent'
+    });
     console.log(`[MediaMTX Monitor Backend] Server listening on http://0.0.0.0:${PORT}`);
   });
 }

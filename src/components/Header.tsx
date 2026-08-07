@@ -90,27 +90,79 @@ export const Header: React.FC<HeaderProps> = ({
                   {config.appEnv}
                 </span>
 
-                {config.useMockData ? (
-                  <span
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
-                      isDark
-                        ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-                        : 'bg-amber-100 text-amber-800 border-amber-300'
-                    }`}
-                  >
-                    Mock Mode
-                  </span>
-                ) : (
-                  <span
-                    className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
-                      isDark
-                        ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-                        : 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                    }`}
-                  >
-                    Live Backend
-                  </span>
-                )}
+                {(() => {
+                  const isMock = config.useMockData || health?.runtimeDiagnostics?.dataMode === 'mock' || health?.mockMode === true;
+                  if (isMock) {
+                    return (
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
+                          isDark
+                            ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                            : 'bg-amber-100 text-amber-800 border-amber-300'
+                        }`}
+                      >
+                        Mock Mode
+                      </span>
+                    );
+                  }
+
+                  const isBackendOffline = !health || health.status === 'offline' || health.status === 'error' || (health.runtimeDiagnostics && !health.runtimeDiagnostics.backendReachable);
+                  if (isBackendOffline) {
+                    return (
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
+                          isDark
+                            ? 'bg-rose-500/15 text-rose-400 border-rose-500/30'
+                            : 'bg-rose-100 text-rose-800 border-rose-300'
+                        }`}
+                      >
+                        BACKEND OFFLINE
+                      </span>
+                    );
+                  }
+
+                  const isMediaMtxOffline = health.mediamtxConnected === false || (health.runtimeDiagnostics && !health.runtimeDiagnostics.mediaMtxApiReachable);
+                  if (isMediaMtxOffline) {
+                    return (
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
+                          isDark
+                            ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+                            : 'bg-amber-100 text-amber-800 border-amber-300'
+                        }`}
+                      >
+                        MEDIAMTX OFFLINE
+                      </span>
+                    );
+                  }
+
+                  const hasActiveStream = health.activePathsCount > 0 && health.measuredBitrateKbps !== null;
+                  if (!hasActiveStream) {
+                    return (
+                      <span
+                        className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
+                          isDark
+                            ? 'bg-slate-500/15 text-slate-400 border-slate-500/30'
+                            : 'bg-slate-100 text-slate-700 border-slate-300'
+                        }`}
+                      >
+                        NO SIGNAL
+                      </span>
+                    );
+                  }
+
+                  return (
+                    <span
+                      className={`px-2 py-0.5 text-[10px] font-bold rounded border font-mono ${
+                        isDark
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      }`}
+                    >
+                      REAL DATA
+                    </span>
+                  );
+                })()}
               </div>
               
               <div className={`flex items-center space-x-2.5 text-[11px] font-mono mt-0.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>

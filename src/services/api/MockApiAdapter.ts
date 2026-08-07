@@ -273,6 +273,18 @@ export class MockApiAdapter implements IMonitorApiAdapter {
     };
   }
 
+  async getRuntimeDiagnostics(): Promise<import('../../types').RuntimeDiagnostics> {
+    return {
+      dataMode: 'mock',
+      mockEnabled: true,
+      adapter: 'mock',
+      backendReachable: true,
+      mediaMtxApiReachable: true,
+      mediaMtxMetricsReachable: true,
+      sampledAt: new Date().toISOString()
+    };
+  }
+
   async getHealth(): Promise<BackendHealth> {
     const pathList = Array.from(this.paths.values());
     let totalPubs = 0;
@@ -300,7 +312,16 @@ export class MockApiAdapter implements IMonitorApiAdapter {
       appEnv: this.config.appEnv,
       mockMode: true,
       telemetrySource: 'mock',
-      telemetryFreshness: 'live'
+      telemetryFreshness: 'live',
+      runtimeDiagnostics: {
+        dataMode: 'mock',
+        mockEnabled: true,
+        adapter: 'mock',
+        backendReachable: true,
+        mediaMtxApiReachable: true,
+        mediaMtxMetricsReachable: true,
+        sampledAt: new Date().toISOString()
+      }
     };
   }
 

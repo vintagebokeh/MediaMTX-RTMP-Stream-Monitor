@@ -9,6 +9,7 @@ import {
   LogEntry,
   MonitoringApi,
   RuntimeConfig,
+  RuntimeDiagnostics,
   StreamInfo,
   StreamPath,
   TelemetrySnapshot
@@ -19,6 +20,11 @@ export interface IMonitorApiAdapter extends MonitoringApi {
    * Unique instance identifier for lifecycle tracking
    */
   readonly instanceId: string;
+
+  /**
+   * Fetch runtime diagnostics endpoint data
+   */
+  getRuntimeDiagnostics(): Promise<RuntimeDiagnostics>;
 
   /**
    * Current number of active live metrics subscribers

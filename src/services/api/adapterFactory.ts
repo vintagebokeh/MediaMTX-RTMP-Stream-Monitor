@@ -1,40 +1,52 @@
-import { AppEnv, ConnectionConfig } from '../../types';
+import { AppEnv, ConnectionConfig, resolveRuntimeDataMode } from '../../types';
 import { IMonitorApiAdapter } from './IMonitorApiAdapter';
 import { MockApiAdapter } from './MockApiAdapter';
 import { RealApiAdapter } from './RealApiAdapter';
 
 const STORAGE_KEY = 'mediamtx_monitor_config';
 
-export function getDefaultConfig(): ConnectionConfig {
-  // Read from Vite environment variables as per specification
-  const envApiUrl = import.meta.env.VITE_MONITOR_API_URL || '';
-  const envWsUrl = import.meta.env.VITE_MONITOR_WS_URL || '';
-  const envAppEnv = (import.meta.env.VITE_APP_ENV as AppEnv) || 'local';
-  
-  // Default to mock mode if VITE_USE_MOCK_DATA is "true" or if running in AI Studio without external API
-  const mockFlag = import.meta.env.VITE_USE_MOCK_DATA;
-  const useMockData = mockFlag === undefined ? true : mockFlag === 'true';
+let hasLoggedStartupBanner = false;
 
-  // Check localStorage for user runtime overrides
+function getEnvVar(key: string): string | undefined {
+  if (typeof import.meta !== 'undefined' && import.meta.env && key in import.meta.env) {
+    return import.meta.env[key];
+  }
+  if (typeof process !== 'undefined' && process.env) {
+    return process.env[key];
+  }
+  return undefined;
+}
+
+export function getDefaultConfig(): ConnectionConfig {
+  const envApiUrl = getEnvVar('VITE_MONITOR_API_URL') || '';
+  const envWsUrl = getEnvVar('VITE_MONITOR_WS_URL') || '';
+  const envAppEnv = (getEnvVar('VITE_APP_ENV') as AppEnv) || 'local';
+  
+  // Resolve mode strictly from VITE_USE_MOCK_DATA environment variable
+  const rawMockFlag = getEnvVar('VITE_USE_MOCK_DATA');
+  const dataMode = resolveRuntimeDataMode(rawMockFlag);
+  const useMockData = dataMode === 'mock';
+
+  let apiUrl = envApiUrl;
+  let wsUrl = envWsUrl;
+  let appEnv = envAppEnv;
+
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      return {
-        apiUrl: parsed.apiUrl ?? envApiUrl,
-        wsUrl: parsed.wsUrl ?? envWsUrl,
-        appEnv: parsed.appEnv ?? envAppEnv,
-        useMockData: parsed.useMockData ?? useMockData
-      };
+      if (parsed.apiUrl) apiUrl = parsed.apiUrl;
+      if (parsed.wsUrl) wsUrl = parsed.wsUrl;
+      if (parsed.appEnv) appEnv = parsed.appEnv;
     }
   } catch (e) {
     // fallback
   }
 
   return {
-    apiUrl: envApiUrl,
-    wsUrl: envWsUrl,
-    appEnv: envAppEnv,
+    apiUrl,
+    wsUrl,
+    appEnv,
     useMockData
   };
 }
@@ -49,6 +61,22 @@ export function saveConfig(config: ConnectionConfig): void {
 
 export function createApiAdapter(overrideConfig?: ConnectionConfig): IMonitorApiAdapter {
   const config = overrideConfig || getDefaultConfig();
+  const rawMockFlag = getEnvVar('VITE_USE_MOCK_DATA');
+  const dataMode = resolveRuntimeDataMode(rawMockFlag);
+  const adapterType = config.useMockData ? 'MockApiAdapter' : 'RealApiAdapter';
+
+  if (!hasLoggedStartupBanner) {
+    hasLoggedStartupBanner = true;
+    console.log('[Runtime Mode Startup Banner]', {
+      runtimeDataMode: dataMode,
+      adapterType,
+      apiBaseUrl: config.apiUrl || '(relative / api)',
+      wsUrl: config.wsUrl || '(auto ws)',
+      buildMode: getEnvVar('MODE') || 'production',
+      mockFlagRawValue: rawMockFlag ?? 'absent'
+    });
+  }
+
   if (config.useMockData) {
     return new MockApiAdapter(config);
   } else {

@@ -1,5 +1,21 @@
 export type AppEnv = 'local' | 'lan' | 'remote';
 
+export type RuntimeDataMode = 'real' | 'mock';
+
+export function resolveRuntimeDataMode(flagRawValue?: string): RuntimeDataMode {
+  return flagRawValue === 'true' ? 'mock' : 'real';
+}
+
+export interface RuntimeDiagnostics {
+  dataMode: RuntimeDataMode;
+  mockEnabled: boolean;
+  adapter: 'real' | 'mock';
+  backendReachable: boolean;
+  mediaMtxApiReachable: boolean;
+  mediaMtxMetricsReachable: boolean;
+  sampledAt: string;
+}
+
 export type TelemetrySource =
   | "mock"
   | "mediamtx-api"
@@ -135,6 +151,7 @@ export interface BackendHealth {
   mockMode: boolean;
   telemetrySource?: TelemetrySource;
   telemetryFreshness?: TelemetryFreshness;
+  runtimeDiagnostics?: RuntimeDiagnostics;
 }
 
 export type HealthResponse = BackendHealth;

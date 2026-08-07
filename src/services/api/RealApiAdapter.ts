@@ -71,11 +71,34 @@ export class RealApiAdapter implements IMonitorApiAdapter {
     }
   }
 
+  async getRuntimeDiagnostics(): Promise<import('../../types').RuntimeDiagnostics> {
+    try {
+      const res = await fetch(`${this.getBaseUrl()}/api/v1/runtime-mode`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      return {
+        dataMode: 'real',
+        mockEnabled: false,
+        adapter: 'real',
+        backendReachable: false,
+        mediaMtxApiReachable: false,
+        mediaMtxMetricsReachable: false,
+        sampledAt: new Date().toISOString()
+      };
+    }
+  }
+
   async getHealth(): Promise<BackendHealth> {
     try {
       const res = await fetch(`${this.getBaseUrl()}/api/health`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      const data = await res.json();
+      const diagnostics = await this.getRuntimeDiagnostics().catch(() => null);
+      if (diagnostics) {
+        data.runtimeDiagnostics = diagnostics;
+      }
+      return data;
     } catch (err) {
       console.warn('RealApiAdapter getHealth error:', err);
       return {
@@ -91,7 +114,16 @@ export class RealApiAdapter implements IMonitorApiAdapter {
         appEnv: this.config.appEnv,
         mockMode: false,
         telemetrySource: 'unavailable',
-        telemetryFreshness: 'unavailable'
+        telemetryFreshness: 'unavailable',
+        runtimeDiagnostics: {
+          dataMode: 'real',
+          mockEnabled: false,
+          adapter: 'real',
+          backendReachable: false,
+          mediaMtxApiReachable: false,
+          mediaMtxMetricsReachable: false,
+          sampledAt: new Date().toISOString()
+        }
       };
     }
   }
